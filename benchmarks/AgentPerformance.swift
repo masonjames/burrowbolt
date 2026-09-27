@@ -56,6 +56,15 @@ nonisolated final class AgentBenchmarkTrash: @unchecked Sendable {
             throw NSError(domain: "OfflineTrash", code: item.node, userInfo: [NSLocalizedDescriptionKey: "injected failure"])
         }
     }
+    static func batch(_ items: [CleanupItem]) async -> (moved: [URL], error: String?) {
+        await Task.detached {
+            var errors: [String] = []
+            for item in items {
+                do { try move(item) } catch { errors.append("\(item.display): \(error.localizedDescription)") }
+            }
+            return ([],errors.isEmpty ? nil : errors.joined(separator:"\n"))
+        }.value
+    }
     var nodes: [Int] { lock.lock(); defer { lock.unlock() }; return moved }
 }
 
@@ -147,7 +156,7 @@ private func plan(_ count: Int, pathLength: Int = 96, pathsPerItem: Int = 1) -> 
     return json(["summary": "Twelve caches, unchanged.", "items": items])
 }
 private func check(_ condition: @autoclosure () -> Bool, _ message: String) {
-    precondition(condition(), message)
+    if !condition() { FileHandle.standardError.write(Data(("FAIL: " + message + "\n").utf8)); exit(1) }
 }
 private func ms(_ work: () -> Void) -> Double {
     let start = DispatchTime.now().uptimeNanoseconds; work()
@@ -340,6 +349,7 @@ struct AgentPerformance {
         check(AgentBenchmarkLaunch.calls == 1 && completed.preparationTask == nil, "Uncancelled preparation did not launch exactly once")
         let model = ScanModel()
         model.tree = tree
+        model.discoveryReady = true
         model.agentEnv = AgentEnvironment(agents: [agent], loaded: true)
         let batch = model.cleanupTrash
         var selected = (0..<10).map { CleanupItem(node: $0, path: "/offline/\($0)", display: "item-\($0)", kind: "fixture", bytes: 1) }
@@ -366,12 +376,12 @@ struct AgentPerformance {
         check(heartbeat == 5 && batch.running && completions == 0, "UI did not remain responsive during blocked trash I/O")
         AgentBenchmarkGate.shared.release(); await trashTask.value
         check(AgentBenchmarkTrash.shared.nodes == Array(0..<10), "Batch did not preserve the captured selection")
-        check(failures == ["item-2: injected failure", "item-7: injected failure"], "Per-item trash failures changed")
+        check(failures == ["item-2: injected failure\nitem-7: injected failure"], "Per-item trash failures changed")
         check(completions == 1 && !batch.running, "Batch did not complete/rescan exactly once")
         check(batch.failures == failures, "Controller did not retain failures after the panel callback")
         failures = [] // Discard the panel's local copy, as closing the inspector does.
         await Task.yield()
-        let retainedFailures = ["item-2: injected failure", "item-7: injected failure"]
+        let retainedFailures = ["item-2: injected failure\nitem-7: injected failure"]
         check(model.cleanupTrash.failures == retainedFailures, "Closing the panel lost cleanup failures")
         let successfulTask = batch.start([CleanupItem(node: 10, path: "/offline/10", display: "item-10", kind: "fixture", bytes: 1)]) { result in
             check(result.isEmpty, "A successful batch inherited an earlier batch's callback failures")

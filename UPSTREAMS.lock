@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "blitztree": {
+    "repository": "https://github.com/ahmedkhaleel2004/blitztree",
+    "commit": "699fd919d58cbb6b33055d5404890071c6b9c070"
+  },
+  "mole": {
+    "repository": "https://github.com/tw93/Mole",
+    "commit": "50790e8ac4b8346a071f9cc64356c7f86b7b142c",
+    "subtree": "vendor/mole",
+    "tree": "2ae408fcacb119df1b002d8015f3ebc203b9f1b5"
+  },
+  "sparkle": {
+    "version": "2.10.0",
+    "url": "https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz",
+    "sha256": "c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c",
+    "source": {
+      "commit": "eef1a539a373c1f1a320624b1130fc5de7b2e100",
+      "url": "https://github.com/sparkle-project/Sparkle/archive/eef1a539a373c1f1a320624b1130fc5de7b2e100.tar.gz",
+      "sha256": "fd2a5de329be3619111f9a73a1adeac9725a92292f0431c93679e5e2b0d48a04"
+    }
+  },
+  "toolchains": {
+    "rust": "1.98.1",
+    "swift": "6.4",
+    "xcode": "27.0",
+    "deployment_target": "14.0",
+    "architecture": "arm64"
+  },
+  "bats": {
+    "version": "1.14.0",
+    "url": "https://github.com/bats-core/bats-core/archive/refs/tags/v1.14.0.tar.gz",
+    "sha256": "bb537b70b15b732f6d8827dd6578e3d8ce166636ce1f18ea9a074184fcce9177"
+  },
+  "performance_baseline": "699fd919d58cbb6b33055d5404890071c6b9c070"
+}

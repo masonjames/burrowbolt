@@ -1,0 +1,11 @@
+--- a/tests/clean_core.bats
++++ b/tests/clean_core.bats
+@@ -1617,6 +1617,8 @@
+ 
+     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+ set -euo pipefail
++# This isolated HOME has no real Mail owner. The user's desktop must not affect the fixture.
++pgrep() { return 1; }
+ source "$PROJECT_ROOT/lib/core/common.sh"
+ source "$PROJECT_ROOT/lib/clean/user.sh"
+ _clean_mail_downloads

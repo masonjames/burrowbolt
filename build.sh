@@ -1,75 +1,68 @@
 #!/bin/zsh
-# Build BlitzTree.app: Rust engine + Swift UI, assembled into a bundle.
+# Native Apple Silicon application; build tools are never runtime dependencies.
 set -euo pipefail
 cd "$(dirname "$0")"
 [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
-VERSION=$(awk -F'"' '/^version/{print $2; exit}' Cargo.toml)
-# Last three macOS releases. Newer-only UI (Liquid Glass) is gated with
-# #available, so the compiler enforces that nothing newer slips in unguarded.
+VERSION=$(<VERSION)
+export BURROWBOLT_SPARKLE_PUBLIC_KEY=${BURROWBOLT_SPARKLE_PUBLIC_KEY:-$(<config/Sparkle.pub)}
 MIN_MACOS=14.0
 export MACOSX_DEPLOYMENT_TARGET=$MIN_MACOS
-
-echo "==> Rust engine"
-cargo build --release
-
-APP=build/BlitzTree.app
+SPARKLE=$(python3 scripts/fetch-sparkle.py)
+IDENTITY=${BURROWBOLT_SIGN_IDENTITY:--}
+if [[ ${BURROWBOLT_RELEASE:-0} == 1 ]]; then
+    [[ "$IDENTITY" == 'Developer ID Application:'* ]] || { print -u2 'Release requires BURROWBOLT_SIGN_IDENTITY (Developer ID Application).'; exit 1; }
+    [[ -n ${BURROWBOLT_SPARKLE_PUBLIC_KEY:-} ]] || { print -u2 'Release requires the Sparkle public key.'; exit 1; }
+fi
+cargo build --locked --release --features cli --bin burrowbolt-worker --lib
+scripts/prepare-mole.sh
+APP=build/BurrowBolt.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-
-echo "==> Swift UI"
-swiftc app/*.swift \
-    -import-objc-header app/bz.h \
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Licenses" "$APP/Contents/Frameworks"
+ditto "$SPARKLE/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+ditto build/mole "$APP/Contents/Resources/mole"
+cp LICENSE NOTICE LICENSES/* "$APP/Contents/Resources/Licenses/"
+python3 scripts/bundle-licenses.py "$APP/Contents/Resources/Licenses"
+cp "$SPARKLE/LICENSE" "$APP/Contents/Resources/Licenses/Sparkle.txt"
+cp target/release/burrowbolt-worker "$APP/Contents/MacOS/"
+cp integration/mole/families.txt "$APP/Contents/Resources/"
+cp integration/mole/adapter.sh "$APP/Contents/Resources/"
+cp UPSTREAMS.lock "$APP/Contents/Resources/"
+swiftc app/*.swift -import-objc-header app/bz.h \
     -O -parse-as-library -swift-version 6 -default-isolation MainActor \
-    -target arm64-apple-macos$MIN_MACOS \
-    -L target/release -lblitztree \
-    -framework AppKit -framework SwiftUI \
-    -o "$APP/Contents/MacOS/BlitzTree"
-
-cat > "$APP/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key><string>BlitzTree</string>
-    <key>CFBundleDisplayName</key><string>BlitzTree</string>
-    <key>CFBundleIdentifier</key><string>dev.ahmed.blitztree</string>
-    <key>CFBundleVersion</key><string>$VERSION</string>
-    <key>CFBundleShortVersionString</key><string>$VERSION</string>
-    <key>CFBundleExecutable</key><string>BlitzTree</string>
-    <key>CFBundlePackageType</key><string>APPL</string>
-    <key>LSMinimumSystemVersion</key><string>$MIN_MACOS</string>
-    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
-    <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>CFBundleIconName</key><string>AppIcon</string>
-    <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>Ahmed Khaleel</string>
-</dict>
-</plist>
-EOF
-echo -n 'APPL????' > "$APP/Contents/PkgInfo"
-# Icon Composer source → Assets.car (Liquid Glass, macOS 26+) plus a flat
-# AppIcon.icns that older systems use. Regenerate the source with
-# `python3 assets/gen_icon.py`.
+    -target arm64-apple-macos$MIN_MACOS -L target/release -lblitztree \
+    -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
+    -framework AppKit -framework SwiftUI -o "$APP/Contents/MacOS/BurrowBolt"
+python3 - "$APP" "$VERSION" <<'PY'
+import os, pathlib, plistlib, sys
+app, version = pathlib.Path(sys.argv[1]), sys.argv[2]
+info = dict(CFBundleName='BurrowBolt', CFBundleDisplayName='BurrowBolt',
+    CFBundleIdentifier='com.masonjames.burrowbolt', CFBundleVersion=version,
+    CFBundleShortVersionString=version, CFBundleExecutable='BurrowBolt',
+    CFBundlePackageType='APPL', LSMinimumSystemVersion='14.0',
+    LSApplicationCategoryType='public.app-category.utilities',
+    CFBundleIconFile='AppIcon', CFBundleIconName='AppIcon', NSHighResolutionCapable=True,
+    NSHumanReadableCopyright='BurrowBolt contributors; BlitzTree and Mole contributors. GPLv3.',
+    SUFeedURL='https://masonjames.github.io/burrowbolt/appcast.xml',
+    SUAutomaticallyUpdate=False, SUAllowsAutomaticUpdates=False,
+    SURequireSignedFeed=True, SUVerifyUpdateBeforeExtraction=True,
+    BurrowBoltDevelopmentBuild=os.environ.get('BURROWBOLT_RELEASE') != '1')
+key = os.environ.get('BURROWBOLT_SPARKLE_PUBLIC_KEY')
+if key:
+    info['SUPublicEDKey'] = key
+(app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+PY
+print -n 'APPL????' > "$APP/Contents/PkgInfo"
 xcrun actool "$PWD/assets/AppIcon.icon" --compile "$PWD/$APP/Contents/Resources" \
     --platform macosx --target-device mac --minimum-deployment-target $MIN_MACOS \
     --app-icon AppIcon --output-partial-info-plist "$PWD/build/icon-partial.plist" >/dev/null
-
-# Prefer a real identity: stable code requirement -> TCC/FDA grants survive
-# rebuilds. Developer ID (paid program) with the hardened runtime and a secure
-# timestamp is what notarization needs; Apple Development is the fallback.
-# The Developer ID key lives in its own keychain so codesign never prompts;
-# unlock it if this machine has one.
-SIGN_KC="$HOME/Library/Keychains/blitztree-signing.keychain-db"
-SIGN_PASS="$HOME/.config/blitztree-signing/keychain.pass"
-if [[ -f "$SIGN_KC" && -f "$SIGN_PASS" ]]; then
-    security unlock-keychain -p "$(<"$SIGN_PASS")" "$SIGN_KC"
-fi
-IDS=$(security find-identity -v -p codesigning 2>/dev/null)
-IDENTITY=$(awk -F'"' '/Developer ID Application/{print $2; exit}' <<<"$IDS")
-if [[ -n "$IDENTITY" ]]; then
-    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
-else
-    IDENTITY=$(awk -F'"' '/Apple Development/{print $2; exit}' <<<"$IDS")
-    codesign --force --sign "${IDENTITY:--}" "$APP"
-fi
-echo "==> Built $APP"
+SIGN_ARGS=(--force --sign "$IDENTITY")
+if [[ "$IDENTITY" != - ]]; then SIGN_ARGS+=(--options runtime --timestamp); fi
+FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+for nested in "$FRAMEWORK/XPCServices/Installer.xpc" "$FRAMEWORK/XPCServices/Downloader.xpc" \
+    "$FRAMEWORK/Autoupdate" "$FRAMEWORK/Updater.app" "$APP/Contents/Frameworks/Sparkle.framework"; do
+    codesign "${SIGN_ARGS[@]}" "$nested"
+done
+codesign "${SIGN_ARGS[@]}" "$APP/Contents/MacOS/burrowbolt-worker"
+codesign "${SIGN_ARGS[@]}" "$APP"
+codesign --verify --deep --strict "$APP"
+print "Built $APP"

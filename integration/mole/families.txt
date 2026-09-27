@@ -1,0 +1,12 @@
+clean_user_essentials
+clean_app_caches
+clean_browsers
+run_cloud_and_office_cleanup
+clean_developer_tools
+clean_user_gui_applications
+clean_virtualization_tools
+clean_application_support_logs
+clean_orphaned_app_data
+clean_orphaned_container_stubs
+clean_apple_silicon_caches
+clean_cached_device_firmware

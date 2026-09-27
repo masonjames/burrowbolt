@@ -3,10 +3,12 @@
 #define BZ_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct BzScan BzScan;
 
 BzScan *bz_scan_start(const char *path);
+void bz_cancel(BzScan *h);
 void bz_progress(BzScan *h, uint64_t *files, uint64_t *dirs, uint64_t *bytes, int *done);
 uint64_t bz_take_tree(BzScan *h);
 
@@ -14,6 +16,7 @@ const uint32_t *bz_parents(BzScan *h);
 const uint64_t *bz_alloc(BzScan *h);
 const uint64_t *bz_logical(BzScan *h);
 const uint32_t *bz_nfiles(BzScan *h);
+const bool *bz_complete(BzScan *h); // false includes skipped or unreadable descendants
 const uint8_t *bz_flags(BzScan *h); // bit0 = is_dir
 const uint32_t *bz_child_off(BzScan *h); // length N+1
 const uint32_t *bz_children(BzScan *h);

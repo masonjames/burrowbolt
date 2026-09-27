@@ -122,6 +122,7 @@ getter!(bz_alloc, alloc, u64);
 getter!(bz_logical, logical, u64);
 getter!(bz_nfiles, n_files, u32);
 getter!(bz_flags, flags, u8);
+getter!(bz_complete, complete, bool);
 getter!(bz_child_off, child_off, u32);
 getter!(bz_children, children, u32);
 getter!(bz_name_off, name_off, u32);
@@ -165,9 +166,18 @@ pub extern "C" fn bz_errors(h: *mut BzScan) -> u64 {
     h.flat.as_ref().map_or(0, |f| f.tree.errors)
 }
 
+/// Request cancellation without invalidating the handle or its buffers.
+#[no_mangle]
+pub extern "C" fn bz_cancel(h: *mut BzScan) {
+    if let Some(h) = unsafe { h.as_ref() } {
+        h.progress.cancelled.store(true, Ordering::Relaxed);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn bz_free(h: *mut BzScan) {
     if !h.is_null() {
+        bz_cancel(h);
         drop(unsafe { Box::from_raw(h) });
     }
 }

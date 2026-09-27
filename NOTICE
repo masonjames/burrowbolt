@@ -1,0 +1,4 @@
+BurrowBolt combines BlitzTree and Mole under GNU GPL version 3.
+BlitzTree remains copyright Ahmed Khaleel and its contributors, under MIT; see LICENSES/BlitzTree-MIT.txt.
+Mole remains copyright tw93 and its contributors; see vendor/mole/LICENSE.
+Bundled third-party notices are included in the application Resources/Licenses directory.

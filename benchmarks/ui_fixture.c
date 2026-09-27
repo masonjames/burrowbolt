@@ -9,6 +9,7 @@ struct BzScan {
     uint32_t *parents, *nfiles, *child_off, *children, *name_off;
     uint64_t *alloc;
     uint8_t *flags, *name_blob;
+    bool *complete;
 };
 static void *copied(const void *source, size_t bytes) {
     void *result = malloc(bytes ? bytes : 1);
@@ -23,6 +24,8 @@ BzScan *bz_fixture_create(uint32_t n, const uint32_t *parents,
     BzScan *h = calloc(1, sizeof(*h));
     if (!h) abort();
     h->count = n;
+    h->complete = malloc(n * sizeof(bool));
+    for (uint32_t i = 0; i < n; ++i) h->complete[i] = true;
     h->cleanup_nodes = copied(NULL, 0);
     h->parents = copied(parents, n * sizeof(*parents));
     h->alloc = copied(alloc, n * sizeof(*alloc));
@@ -34,6 +37,8 @@ BzScan *bz_fixture_create(uint32_t n, const uint32_t *parents,
     h->name_blob = copied(name_blob, name_off[n]);
     return h;
 }
+void bz_cancel(BzScan *h) { (void)h; }
+const bool *bz_complete(BzScan *h) { return h->complete; }
 BzScan *bz_scan_start(const char *path) { (void)path; abort(); }
 void bz_progress(BzScan *h, uint64_t *f, uint64_t *d, uint64_t *b, int *done) {
     (void)h; *f = 0; *d = 0; *b = 0; *done = 1;
@@ -68,6 +73,7 @@ void bz_free(BzScan *h) {
     if (!h) return;
     for (uint32_t i = 0; i < h->cleanup_count; ++i) free(h->cleanup_descriptions[i]);
     free(h->cleanup_descriptions); free(h->cleanup_nodes);
+    free(h->complete);
     free(h->parents); free(h->alloc); free(h->flags); free(h->nfiles);
     free(h->child_off); free(h->children); free(h->name_off); free(h->name_blob); free(h);
 }

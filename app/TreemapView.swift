@@ -28,8 +28,26 @@ final class TreemapNSView: NSView {
     private var lastRoot: Int = -1
     private var lastTreeID: ObjectIdentifier?
     private var lastShowFree = false
+    private var lastFreeBytes: UInt64 = 0
+    private var lastScale: CGFloat = 0
+    private var renderRevision = 0
+    private var rendering = false
+    private var pendingRender: RenderRequest?
+
+    private struct RenderRequest: Sendable {
+        let tree: Tree
+        let revision: Int, root: Int, pw: Int, ph: Int
+        let scale: CGFloat
+        let showFree: Bool
+        let freeBytes: UInt64
+    }
 
     override var isFlipped: Bool { true }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        relayoutIfNeeded()
+    }
 
     override func layout() {
         super.layout()
@@ -40,15 +58,19 @@ final class TreemapNSView: NSView {
         guard let model, let tree = model.tree else { return }
         let treeID = ObjectIdentifier(tree)
         if bounds.size != lastSize || model.viewRoot != lastRoot || treeID != lastTreeID
-            || model.showFreeSpace != lastShowFree {
+            || model.showFreeSpace != lastShowFree
+            || (model.showFreeSpace && model.freeBytes != lastFreeBytes)
+            || (window?.backingScaleFactor ?? 2) != lastScale {
             relayout()
         }
     }
 
     func relayout() {
+        renderRevision += 1
         guard let model, let tree = model.tree, bounds.width > 4, bounds.height > 4 else {
             rects = []; leaves = []; labels = []; labelText = []; labelHits = []
             hoveredLabel = nil; litRects = nil; bitmap = nil
+            pendingRender = nil
             lastSize = .zero
             resetLookups()
             needsDisplay = true
@@ -58,10 +80,14 @@ final class TreemapNSView: NSView {
         lastRoot = model.viewRoot
         lastTreeID = ObjectIdentifier(tree)
         lastShowFree = model.showFreeSpace
+        lastFreeBytes = model.freeBytes
+        lastScale = window?.backingScaleFactor ?? 2
 
         rects.removeAll(keepingCapacity: true)
         leaves.removeAll(keepingCapacity: true)
         labels.removeAll(keepingCapacity: true)
+        bitmap = nil; labelText = []; labelHits = []; hoveredLabel = nil
+        resetLookups()
         renderBitmap(tree: tree)
         // Everything redraws, so the overlay simply starts from the model
         // (a zoom clears the selection, a rescan the hover).
@@ -71,13 +97,40 @@ final class TreemapNSView: NSView {
     }
 
     private func renderBitmap(tree: Tree) {
-        let scale = window?.backingScaleFactor ?? 2
-        let pw = max(1, Int((bounds.width * scale).rounded()))
-        let ph = max(1, Int((bounds.height * scale).rounded()))
-        let r = TreemapRenderer.render(
-            tree: tree, pw: pw, ph: ph, scale: scale, root: model?.viewRoot ?? 0,
-            showFree: model?.showFreeSpace ?? false, freeBytes: model?.freeBytes ?? 0
-        )
+        let request = RenderRequest(tree: tree, revision: renderRevision, root: model?.viewRoot ?? 0,
+            pw: max(1, Int((bounds.width * lastScale).rounded())),
+            ph: max(1, Int((bounds.height * lastScale).rounded())), scale: lastScale,
+            showFree: model?.showFreeSpace ?? false, freeBytes: model?.freeBytes ?? 0)
+        #if RENDER_BENCHMARK
+        acceptRender(Self.render(request), request: request)
+        #else
+        // One active render and one replaceable request. Never queue a bitmap per resize event.
+        pendingRender = request
+        renderNext()
+        #endif
+    }
+
+    nonisolated private static func render(_ request: RenderRequest) -> TreemapRenderer.Result {
+        TreemapRenderer.render(tree: request.tree, pw: request.pw, ph: request.ph, scale: request.scale,
+            root: request.root, showFree: request.showFree, freeBytes: request.freeBytes)
+    }
+
+    private func renderNext() {
+        guard !rendering, let request = pendingRender else { return }
+        rendering = true
+        pendingRender = nil
+        Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { Self.render(request) }.value
+            guard let self else { return }
+            rendering = false
+            if request.revision == renderRevision { acceptRender(result, request: request) }
+            renderNext()
+        }
+    }
+
+    private func acceptRender(_ r: TreemapRenderer.Result, request: RenderRequest) {
+        let tree = request.tree
+        let pw = request.pw, ph = request.ph
         if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
             NSLog("BZ render %dx%d: %d steps, layout %.1f ms, paint %.1f ms (%d bands)",
                   pw, ph, r.steps, r.layoutMs, r.paintMs, r.bands)
@@ -90,6 +143,9 @@ final class TreemapNSView: NSView {
         resetLookups()
         labelText = labels.map { LabelText($0, tree: tree, freeBytes: model?.freeBytes ?? 0) }
         labelHits = Scan.hits(labels)
+        model?.didRender(tree)
+        shown = Overlay(hovered: hoveredNode, label: hoveredLabel, selection: model?.selection)
+        needsDisplay = true
     }
 
     /// A label's strings and their sizes in the resting (unhovered) look.
@@ -127,7 +183,7 @@ final class TreemapNSView: NSView {
 
         static func name(_ label: TMLabel, hovered: Bool) -> NSAttributedString {
             NSAttributedString(string: label.name, attributes: [
-                .font: NSFont.systemFont(ofSize: 10.5, weight: .semibold),
+                .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
                 .foregroundColor: NSColor.white.withAlphaComponent(hovered ? 1.0 : 0.92),
             ])
         }
@@ -135,7 +191,7 @@ final class TreemapNSView: NSView {
         static func size(_ label: TMLabel, tree: Tree, hovered: Bool) -> NSAttributedString {
             NSAttributedString(string: Fmt.size(tree.alloc[label.node]), attributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
-                .foregroundColor: NSColor.white.withAlphaComponent(hovered ? 0.95 : 0.60),
+                .foregroundColor: NSColor.white.withAlphaComponent(hovered ? 1 : 0.78),
             ])
         }
     }
@@ -299,6 +355,8 @@ final class TreemapNSView: NSView {
 
             let strip = label.strip
             let hovered = label.node == shown.label
+            NSColor.black.withAlphaComponent(0.18).setFill()
+            NSBezierPath(rect:strip).fill()
             if hovered {
                 NSColor.controlAccentColor.withAlphaComponent(0.85).setFill()
                 NSBezierPath(rect: strip).fill()
@@ -371,7 +429,11 @@ final class TreemapNSView: NSView {
     override func keyDown(with event: NSEvent) {
         let esc = event.keyCode == 53
         let cmdUp = event.modifierFlags.contains(.command) && event.keyCode == 126
-        if esc || cmdUp, let model, let tree = model.tree, model.viewRoot != 0 {
+        let back = event.keyCode == 123 || event.keyCode == 51
+        if event.keyCode == 36, let model, let tree = model.tree, let selection = model.selection, tree.isDir(selection) {
+            model.viewRoot = selection
+            relayout()
+        } else if esc || cmdUp || back, let model, let tree = model.tree, model.viewRoot != 0 {
             let p = Int(tree.parents[model.viewRoot])
             model.viewRoot = p == Int(UInt32.max) ? 0 : p
             relayout()
@@ -556,8 +618,20 @@ final class NodeMenu: NSObject {
         alert.addButton(withTitle: "Move to Trash")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
-            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            // Note: sizes refresh on next rescan; v1 keeps it simple.
+            Task {
+                guard let candidates = CleanupCoordinator.shared.candidates(for: [path]) else {
+                    let refusal = NSAlert()
+                    refusal.messageText = "This item has no supported cleanup action"
+                    refusal.informativeText = "Review it in Finder. Informational findings cannot authorize a Trash move."
+                    refusal.runModal()
+                    return
+                }
+                let result = await CleanupCoordinator.shared.trash(candidates)
+                if let error = result.error {
+                    let failure = NSAlert(); failure.messageText = "Cleanup could not finish"
+                    failure.informativeText = error; failure.runModal()
+                }
+            }
         }
     }
 }
@@ -575,7 +649,7 @@ struct TreemapView: NSViewRepresentable {
         view.model = model
         view.relayoutIfNeeded()
         view.syncOverlay() // e.g. a selection made in the list
-        let lit = model.agentRun?.highlights(in: model.tree) ?? []
+        let lit = model.searchText.isEmpty ? (model.agentRun?.highlights(in:model.tree) ?? []) : model.searchResults
         if lit != view.highlights {
             view.highlights = lit
             view.needsDisplay = true

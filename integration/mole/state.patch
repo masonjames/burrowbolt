@@ -1,0 +1,471 @@
+--- a/bin/clean.sh
++++ b/bin/clean.sh
+@@ -46,7 +46,7 @@
+ 
+ load_mole_whitelist "$MOLE_USER_HOME"
+ 
+-CLEAN_PREVIEW_FINAL_FILE="$MOLE_USER_HOME/.config/mole/clean-list.txt"
++CLEAN_PREVIEW_FINAL_FILE="$MOLE_USER_HOME/Library/Application Support/BurrowBolt/mole/clean-list.txt"
+ CLEAN_PREVIEW_STAGING_FILE=""
+ CLEAN_PREVIEW_LEDGER_FILE=""
+ EXPORT_LIST_FILE="$CLEAN_PREVIEW_FINAL_FILE"
+@@ -448,7 +448,7 @@
+ # Mole Cleanup Preview - $(date '+%Y-%m-%d %H:%M:%S')
+ #
+ # How to protect files:
+-# 1. Copy any path below to ~/.config/mole/whitelist
++# 1. Copy any path below to ~/Library/Application Support/BurrowBolt/mole/whitelist
+ # 2. Run: mo clean --whitelist
+ #
+ # Example:
+--- a/bin/purge.sh
++++ b/bin/purge.sh
+@@ -120,7 +120,7 @@
+     fi
+ 
+     # Initialize stats file in user cache directory
+-    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
++    local stats_dir="$HOME/Library/Caches/com.masonjames.burrowbolt/mole"
+     ensure_user_dir "$stats_dir"
+     ensure_user_file "$stats_dir/purge_stats"
+     ensure_user_file "$stats_dir/purge_count"
+@@ -132,7 +132,7 @@
+ 
+ # Perform the purge
+ perform_purge() {
+-    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
++    local stats_dir="$HOME/Library/Caches/com.masonjames.burrowbolt/mole"
+     local monitor_pid=""
+ 
+     # Cleanup function - use flag to prevent duplicate execution
+--- a/bin/uninstall.sh
++++ b/bin/uninstall.sh
+@@ -39,7 +39,7 @@
+ files_cleaned=0
+ total_size_cleaned=0
+ 
+-readonly MOLE_UNINSTALL_META_CACHE_DIR="$HOME/.cache/mole"
++readonly MOLE_UNINSTALL_META_CACHE_DIR="$HOME/Library/Caches/com.masonjames.burrowbolt/mole"
+ readonly MOLE_UNINSTALL_META_CACHE_FILE="$MOLE_UNINSTALL_META_CACHE_DIR/uninstall_app_metadata_v3"
+ readonly MOLE_UNINSTALL_META_CACHE_LOCK="${MOLE_UNINSTALL_META_CACHE_FILE}.lock"
+ readonly MOLE_UNINSTALL_META_REFRESH_TTL=604800 # 7 days
+@@ -359,7 +359,7 @@
+             if [[ "${MO_DEBUG:-}" == "1" ]]; then
+                 local ts
+                 ts=$(date "+%Y-%m-%d %H:%M:%S" 2> /dev/null || echo "?")
+-                echo "[$ts] DEBUG: [metadata-refresh] $*" >> "${HOME}/.config/mole/mole_debug_session.log" 2> /dev/null || true
++                echo "[$ts] DEBUG: [metadata-refresh] $*" >> "${HOME}/Library/Application Support/BurrowBolt/mole/mole_debug_session.log" 2> /dev/null || true
+             fi
+         }
+ 
+--- a/lib/clean/apps.sh
++++ b/lib/clean/apps.sh
+@@ -147,7 +147,7 @@
+     MOLE_APP_SCAN_FAILURE_DETAIL=""
+     # Cache installed app scans briefly. Only a current-schema file with the
+     # completeness footer can authorize orphan decisions.
+-    local cache_file="$HOME/.cache/mole/installed_apps_cache"
++    local cache_file="$HOME/Library/Caches/com.masonjames.burrowbolt/mole/installed_apps_cache"
+     local cache_age_seconds=300 # 5 minutes
+     if [[ -f "$cache_file" ]]; then
+         local cache_mtime=""
+--- a/lib/clean/brew.sh
++++ b/lib/clean/brew.sh
+@@ -276,7 +276,7 @@
+     command -v brew > /dev/null 2>&1 || return 0
+     local cleanup_timeout="${MOLE_TIMEOUT_PKG_CLEANUP_SEC:-20}"
+     local autoremove_preview_timeout="${MOLE_TIMEOUT_PKG_LIST_SEC:-10}"
+-    local brew_cache_file="${HOME}/.cache/mole/brew_last_cleanup"
++    local brew_cache_file="${HOME}/Library/Caches/com.masonjames.burrowbolt/mole/brew_last_cleanup"
+     if [[ "${DRY_RUN:-false}" == "true" ]]; then
+         # Check if Homebrew cache is whitelisted
+         if is_path_whitelisted "$HOME/Library/Caches/Homebrew"; then
+--- a/lib/clean/caches.sh
++++ b/lib/clean/caches.sh
+@@ -9,7 +9,7 @@
+ # Preflight TCC prompts once to avoid mid-run interruptions.
+ check_tcc_permissions() {
+     [[ -t 1 ]] || return 0
+-    local permission_flag="$HOME/.cache/mole/permissions_granted"
++    local permission_flag="$HOME/Library/Caches/com.masonjames.burrowbolt/mole/permissions_granted"
+     [[ -f "$permission_flag" ]] && return 0
+     local -a tcc_dirs=(
+         "$HOME/Library/Caches"
+@@ -238,7 +238,7 @@
+ 
+     while IFS= read -r root; do
+         [[ -d "$root" ]] && roots+=("$root")
+-    done < <(mole_purge_read_paths_config "$HOME/.config/mole/purge_paths")
++    done < <(mole_purge_read_paths_config "$HOME/Library/Application Support/BurrowBolt/mole/purge_paths")
+ 
+     local _indicator_tmp
+     _indicator_tmp=$(create_temp_file)
+--- a/lib/clean/hints.sh
++++ b/lib/clean/hints.sh
+@@ -11,7 +11,7 @@
+ # Designed to be very fast: shallow directory checks only, no deep find scans.
+ # shellcheck disable=SC2329
+ load_quick_purge_hint_paths() {
+-    local config_file="$HOME/.config/mole/purge_paths"
++    local config_file="$HOME/Library/Application Support/BurrowBolt/mole/purge_paths"
+     local -a paths=()
+ 
+     while IFS= read -r line; do
+--- a/lib/clean/project.sh
++++ b/lib/clean/project.sh
+@@ -22,7 +22,7 @@
+ readonly DEFAULT_PURGE_SEARCH_PATHS=("${MOLE_PURGE_DEFAULT_SEARCH_PATHS[@]}")
+ 
+ # Config file for custom purge paths.
+-readonly PURGE_CONFIG_FILE="$HOME/.config/mole/purge_paths"
++readonly PURGE_CONFIG_FILE="$HOME/Library/Application Support/BurrowBolt/mole/purge_paths"
+ 
+ # Resolved search paths.
+ PURGE_SEARCH_PATHS=()
+@@ -63,7 +63,7 @@
+     # up to date, and recovery needs a network restore, which purge must never
+     # require (#1459). Same shape for vendor/ and Pods/. A container that
+     # happens to share an artifact name stays reachable through
+-    # ~/.config/mole/purge_paths, which bypasses discovery.
++    # ~/Library/Application Support/BurrowBolt/mole/purge_paths, which bypasses discovery.
+     local purge_target
+     for purge_target in "${PURGE_TARGETS[@]}"; do
+         if [[ "$basename" == "$purge_target" ]]; then
+@@ -611,7 +611,7 @@
+     local scan_stage_timeout=""
+ 
+     # Update current scanning path
+-    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
++    local stats_dir="$HOME/Library/Caches/com.masonjames.burrowbolt/mole"
+     echo "$search_path" > "$stats_dir/purge_scanning" 2> /dev/null || true
+ 
+     emit_valid_cachedir_tag_dirs() {
+@@ -1722,7 +1722,7 @@
+             rm -f "$temp" "${temp}.targets" "${temp}.tags" "${temp}.processed" "${temp}.errors" 2> /dev/null || true
+         done
+         # Clean up purge scanning file
+-        local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
++        local stats_dir="$HOME/Library/Caches/com.masonjames.burrowbolt/mole"
+         rm -f "$stats_dir/purge_scanning" 2> /dev/null || true
+         echo ""
+         exit 130
+@@ -1863,7 +1863,7 @@
+     done
+ 
+     if [[ $scan_interrupt_status -ge 128 ]]; then
+-        local interrupted_stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
++        local interrupted_stats_dir="$HOME/Library/Caches/com.masonjames.burrowbolt/mole"
+         rm -f "$interrupted_stats_dir/purge_scanning" 2> /dev/null || true
+         local interrupted_temp
+         for interrupted_temp in "${scan_temps[@]+"${scan_temps[@]}"}"; do
+@@ -1878,7 +1878,7 @@
+     fi
+ 
+     # Stop the scanning monitor (removes purge_scanning file to signal completion)
+-    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
++    local stats_dir="$HOME/Library/Caches/com.masonjames.burrowbolt/mole"
+     rm -f "$stats_dir/purge_scanning" 2> /dev/null || true
+ 
+     # Give monitor process time to exit and clear its output
+@@ -2585,7 +2585,7 @@
+ 
+     # Clean selected items
+     echo ""
+-    local stats_dir="${XDG_CACHE_HOME:-$HOME/.cache}/mole"
++    local stats_dir="$HOME/Library/Caches/com.masonjames.burrowbolt/mole"
+     local cleaned_count=0
+     local dry_run_mode="${MOLE_DRY_RUN:-0}"
+     for idx in "${selected_indices[@]}"; do
+--- a/lib/clean/purge_shared.sh
++++ b/lib/clean/purge_shared.sh
+@@ -214,7 +214,7 @@
+ }
+ 
+ mole_purge_read_paths_config() {
+-    local config_file="${1:-$HOME/.config/mole/purge_paths}"
++    local config_file="${1:-$HOME/Library/Application Support/BurrowBolt/mole/purge_paths}"
+     [[ -f "$config_file" ]] || return 0
+ 
+     local line
+--- a/lib/core/app_protection.sh
++++ b/lib/core/app_protection.sh
+@@ -461,7 +461,7 @@
+             return 0
+             ;;
+         # Protect Mole's own runtime logs so cleanup cannot delete its active log targets.
+-        */Library/Logs/mole | */Library/Logs/mole/ | */Library/Logs/mole/*)
++        */Library/Logs/BurrowBolt | */Library/Logs/BurrowBolt/ | */Library/Logs/BurrowBolt/*)
+             return 0
+             ;;
+         # Codex Crashpad pending crash reports are disposable diagnostics and
+--- a/lib/core/base.sh
++++ b/lib/core/base.sh
+@@ -370,7 +370,7 @@
+     WHITELIST_PATTERNS=()
+     WHITELIST_WARNINGS=()
+ 
+-    local whitelist_file="$MOLE_USER_HOME/.config/mole/whitelist"
++    local whitelist_file="$MOLE_USER_HOME/Library/Application Support/BurrowBolt/mole/whitelist"
+     if [[ -f "$whitelist_file" ]]; then
+         local line duplicate existing
+         while IFS= read -r line; do
+@@ -957,11 +957,11 @@
+     [[ -n "$root" && -d "$root" && ! -L "$root" ]] || return 0
+ 
+     if is_root_user; then
+-        [[ "$root" == "/private/var/root/.cache/mole/tmp" ]] || return 0
++        [[ "$root" == "/private/var/root/Library/Caches/com.masonjames.burrowbolt/mole/tmp" ]] || return 0
+     else
+         invoking_home=$(get_invoking_home)
+         [[ -n "$invoking_home" ]] || return 0
+-        [[ "$root" == "${invoking_home%/}/.cache/mole/tmp" ]] || return 0
++        [[ "$root" == "${invoking_home%/}/Library/Caches/com.masonjames.burrowbolt/mole/tmp" ]] || return 0
+     fi
+ 
+     find "$root" -mindepth 1 -maxdepth 1 \( -type f -o -type l \) \
+@@ -1026,11 +1026,11 @@
+         [[ -d "$root_home" && ! -L "$root_home" && -O "$root_home" ]] || root_home="/var/root"
+         [[ -d "$root_home" && ! -L "$root_home" && -O "$root_home" ]] || return 1
+ 
+-        local root_temp="$root_home/.cache/mole/tmp"
++        local root_temp="$root_home/Library/Caches/com.masonjames.burrowbolt/mole/tmp"
+         mkdir -p "$root_temp" 2> /dev/null || return 1
+-        chmod 700 "$root_home/.cache" "$root_home/.cache/mole" "$root_temp" 2> /dev/null || true
++        chmod 700 "$root_home/.cache" "$root_home/Library/Caches/com.masonjames.burrowbolt/mole" "$root_temp" 2> /dev/null || true
+         root_temp=$(cd -P "$root_temp" 2> /dev/null && pwd) || return 1
+-        [[ "$root_temp" == "$root_home/.cache/mole/tmp" && -d "$root_temp" && ! -L "$root_temp" && -O "$root_temp" ]] || return 1
++        [[ "$root_temp" == "$root_home/Library/Caches/com.masonjames.burrowbolt/mole/tmp" && -d "$root_temp" && ! -L "$root_temp" && -O "$root_temp" ]] || return 1
+ 
+         MOLE_RESOLVED_TMPDIR="$root_temp"
+         export MOLE_RESOLVED_TMPDIR
+@@ -1059,7 +1059,7 @@
+     if [[ -z "$resolved" ]]; then
+         invoking_home=$(get_invoking_home)
+         if [[ -n "$invoking_home" ]]; then
+-            resolved=$(probe_temp_root "$invoking_home/.cache/mole/tmp" true || true)
++            resolved=$(probe_temp_root "$invoking_home/Library/Caches/com.masonjames.burrowbolt/mole/tmp" true || true)
+         fi
+     fi
+ 
+--- a/lib/core/common.sh
++++ b/lib/core/common.sh
+@@ -209,7 +209,7 @@
+     _mole_repair_stale_brew_entries
+ 
+     # Clear update cache (suppress errors if cache doesn't exist or is locked)
+-    rm -f "$HOME/.cache/mole/version_check" "$HOME/.cache/mole/update_message" 2> /dev/null || true
++    rm -f "$HOME/Library/Caches/com.masonjames.burrowbolt/mole/version_check" "$HOME/Library/Caches/com.masonjames.burrowbolt/mole/update_message" 2> /dev/null || true
+ }
+ 
+ # Remove applications from Dock
+--- a/lib/core/file_ops.sh
++++ b/lib/core/file_ops.sh
+@@ -2216,7 +2216,7 @@
+ #   MOLE_TEST_TRASH_DIR   Test-only override; Trash moves go here via `mv`
+ #                         instead of Finder/trash CLI. Required for bats.
+ #   MOLE_DELETE_LOG       Override the log file path (default:
+-#                         ~/Library/Logs/mole/deletions.log)
++#                         ~/Library/Logs/BurrowBolt/deletions.log)
+ #
+ # Returns 0 on success and a nonzero MOLE_ERR_* code on failure. Always appends a tab-separated line to
+ # the deletions log: <iso_ts>\t<mode>\t<size_kb>\t<status>\t<path>.
+@@ -3089,7 +3089,7 @@
+     local status="$3"
+     local target="$4"
+ 
+-    local log_file="${MOLE_DELETE_LOG:-$HOME/Library/Logs/mole/deletions.log}"
++    local log_file="${MOLE_DELETE_LOG:-$HOME/Library/Logs/BurrowBolt/deletions.log}"
+     local log_dir
+     log_dir=$(dirname "$log_file")
+ 
+--- a/lib/core/history.sh
++++ b/lib/core/history.sh
+@@ -52,11 +52,11 @@
+ HISTORY_ACTIVE_FAILED_TASKS=0
+ 
+ history_operations_log_file() {
+-    printf '%s\n' "${MOLE_OPERATIONS_LOG:-${OPERATIONS_LOG_FILE:-$HOME/Library/Logs/mole/operations.log}}"
++    printf '%s\n' "${MOLE_OPERATIONS_LOG:-${OPERATIONS_LOG_FILE:-$HOME/Library/Logs/BurrowBolt/operations.log}}"
+ }
+ 
+ history_deletions_log_file() {
+-    printf '%s\n' "${MOLE_DELETE_LOG:-$HOME/Library/Logs/mole/deletions.log}"
++    printf '%s\n' "${MOLE_DELETE_LOG:-$HOME/Library/Logs/BurrowBolt/deletions.log}"
+ }
+ 
+ history_normalize_limit() {
+--- a/lib/core/log.sh
++++ b/lib/core/log.sh
+@@ -21,9 +21,9 @@
+ # Logging Configuration
+ # ============================================================================
+ 
+-readonly LOG_FILE="${HOME}/Library/Logs/mole/mole.log"
+-readonly DEBUG_LOG_FILE="${HOME}/Library/Logs/mole/mole_debug_session.log"
+-readonly OPERATIONS_LOG_FILE="${HOME}/Library/Logs/mole/operations.log"
++readonly LOG_FILE="${HOME}/Library/Logs/BurrowBolt/mole.log"
++readonly DEBUG_LOG_FILE="${HOME}/Library/Logs/BurrowBolt/mole_debug_session.log"
++readonly OPERATIONS_LOG_FILE="${HOME}/Library/Logs/BurrowBolt/operations.log"
+ readonly LOG_MAX_SIZE_DEFAULT=1048576   # 1MB
+ readonly OPLOG_MAX_SIZE_DEFAULT=5242880 # 5MB
+ 
+--- a/lib/core/pkg_receipts.sh
++++ b/lib/core/pkg_receipts.sh
+@@ -16,7 +16,7 @@
+ 
+     local require_complete=0
+     [[ "${1:-}" == "--require-complete" ]] && require_complete=1
+-    local cache_file="${MOLE_PKG_RECEIPT_CACHE_FILE:-$HOME/.cache/mole/pkg_receipt_apps_v1}"
++    local cache_file="${MOLE_PKG_RECEIPT_CACHE_FILE:-$HOME/Library/Caches/com.masonjames.burrowbolt/mole/pkg_receipt_apps_v1}"
+     local cache_ttl="${MOLE_PKG_RECEIPT_CACHE_TTL:-3600}"
+     local now_epoch=0
+     if declare -f get_epoch_seconds > /dev/null 2>&1; then
+--- a/lib/manage/purge_paths.sh
++++ b/lib/manage/purge_paths.sh
+@@ -13,7 +13,7 @@
+ fi
+ 
+ # Config file path (prefer the shared project constant when available)
+-PURGE_PATHS_CONFIG="${PURGE_PATHS_CONFIG:-${PURGE_CONFIG_FILE:-$HOME/.config/mole/purge_paths}}"
++PURGE_PATHS_CONFIG="${PURGE_PATHS_CONFIG:-${PURGE_CONFIG_FILE:-$HOME/Library/Application Support/BurrowBolt/mole/purge_paths}}"
+ 
+ # Ensure config file exists with helpful template
+ ensure_config_template() {
+--- a/lib/manage/remove.sh
++++ b/lib/manage/remove.sh
+@@ -24,7 +24,7 @@
+             candidate=""
+         fi
+     fi
+-    candidate="${candidate:-${HOME%/}/.config/mole}"
++    candidate="${candidate:-${HOME%/}/Library/Application Support/BurrowBolt/mole}"
+     printf '%s\n' "${candidate%/}"
+ }
+ 
+@@ -162,15 +162,15 @@
+                 [[ -f "$alias" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: ${alias}${NC}"
+             done
+         fi
+-        [[ -d "$HOME/.cache/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/.cache/mole${NC}"
++        [[ -d "$HOME/Library/Caches/com.masonjames.burrowbolt/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/Library/Caches/com.masonjames.burrowbolt/mole${NC}"
+         if [[ -d "$remove_config_dir" ]]; then
+-            if [[ "$remove_config_dir" == "${HOME%/}/.config/mole" ]]; then
++            if [[ "$remove_config_dir" == "${HOME%/}/Library/Application Support/BurrowBolt/mole" ]]; then
+                 echo -e "  ${GRAY}${ICON_LIST} Would move to Trash: $remove_config_dir${NC}"
+             else
+                 echo "  ${ICON_LIST} $remove_config_dir (kept for manual review)"
+             fi
+         fi
+-        [[ -d "$HOME/Library/Logs/mole" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/Library/Logs/mole${NC}"
++        [[ -d "$HOME/Library/Logs/BurrowBolt" ]] && echo -e "  ${GRAY}${ICON_LIST} Would remove: $HOME/Library/Logs/BurrowBolt${NC}"
+ 
+         printf '\n%s\n\n' "${GREEN}${ICON_SUCCESS}${NC} Dry run complete, no changes made"
+         exit 0
+@@ -183,13 +183,13 @@
+     for install in ${manual_installs[@]+"${manual_installs[@]}"} ${alias_installs[@]+"${alias_installs[@]}"}; do
+         echo "  ${ICON_LIST} $install"
+     done
+-    if [[ "$remove_config_dir" == "${HOME%/}/.config/mole" ]]; then
+-        echo "  ${ICON_LIST} ~/.config/mole (to Trash)"
++    if [[ "$remove_config_dir" == "${HOME%/}/Library/Application Support/BurrowBolt/mole" ]]; then
++        echo "  ${ICON_LIST} ~/Library/Application Support/BurrowBolt/mole (to Trash)"
+     elif [[ -d "$remove_config_dir" ]]; then
+         echo "  ${ICON_LIST} $remove_config_dir (kept for manual review)"
+     fi
+-    echo "  ${ICON_LIST} ~/.cache/mole"
+-    echo "  ${ICON_LIST} ~/Library/Logs/mole"
++    echo "  ${ICON_LIST} ~/Library/Caches/com.masonjames.burrowbolt/mole"
++    echo "  ${ICON_LIST} ~/Library/Logs/BurrowBolt"
+     echo -ne "${PURPLE}${ICON_ARROW}${NC} Press ${GREEN}Enter${NC} to confirm, ${GRAY}ESC${NC} to cancel: "
+ 
+     IFS= read -r -s -n1 key || key=""
+@@ -256,13 +256,13 @@
+             fi
+         done
+     fi
+-    if [[ -d "$HOME/.cache/mole" ]]; then
+-        rm -rf "$HOME/.cache/mole" 2> /dev/null || true # SAFE: hardcoded Mole-owned dir, -d guarded
++    if [[ -d "$HOME/Library/Caches/com.masonjames.burrowbolt/mole" ]]; then
++        rm -rf "$HOME/Library/Caches/com.masonjames.burrowbolt/mole" 2> /dev/null || true # SAFE: hardcoded Mole-owned dir, -d guarded
+     fi
+     # --config can merge into a shared tree such as ~/.local. Neither known
+     # top-level names nor a recursive filename inventory proves ownership.
+     # Only the reserved default config root can be moved as a whole.
+-    if [[ "$remove_config_dir" == "${HOME%/}/.config/mole" && -d "$remove_config_dir" ]]; then
++    if [[ "$remove_config_dir" == "${HOME%/}/Library/Application Support/BurrowBolt/mole" && -d "$remove_config_dir" ]]; then
+         # The config dir holds user-authored state (whitelist, purge config),
+         # which is the one thing here a reinstall cannot rebuild. Move it to
+         # Trash so it stays recoverable (#1346); cache and logs around it are
+@@ -280,8 +280,8 @@
+             log_warning "Could not move $remove_config_dir to Trash; left in place"
+         fi
+     fi
+-    if [[ -d "$HOME/Library/Logs/mole" ]]; then
+-        rm -rf "$HOME/Library/Logs/mole" 2> /dev/null || true # SAFE: hardcoded Mole-owned dir, -d guarded
++    if [[ -d "$HOME/Library/Logs/BurrowBolt" ]]; then
++        rm -rf "$HOME/Library/Logs/BurrowBolt" 2> /dev/null || true # SAFE: hardcoded Mole-owned dir, -d guarded
+     fi
+ 
+     local final_message
+--- a/lib/manage/update.sh
++++ b/lib/manage/update.sh
+@@ -716,7 +716,7 @@
+     # which channel a relocated install updates from (tw93/Mole#1589).
+     local channel_file="${MOLE_CONFIG_DIR:-${SCRIPT_DIR:-}}/install_channel"
+     if [[ ! -f "$channel_file" ]]; then
+-        channel_file="$HOME/.config/mole/install_channel"
++        channel_file="$HOME/Library/Application Support/BurrowBolt/mole/install_channel"
+     fi
+     local channel="stable"
+     if [[ -f "$channel_file" ]]; then
+@@ -734,7 +734,7 @@
+     local key="$1"
+     local channel_file="${MOLE_CONFIG_DIR:-${SCRIPT_DIR:-}}/install_channel"
+     if [[ ! -f "$channel_file" ]]; then
+-        channel_file="$HOME/.config/mole/install_channel"
++        channel_file="$HOME/Library/Application Support/BurrowBolt/mole/install_channel"
+     fi
+     if [[ -f "$channel_file" ]]; then
+         sed -n "s/^${key}=\(.*\)$/\1/p" "$channel_file" | head -1
+@@ -846,7 +846,7 @@
+ 
+ # Background update notice
+ check_for_updates() {
+-    local msg_cache="$HOME/.cache/mole/update_message"
++    local msg_cache="$HOME/Library/Caches/com.masonjames.burrowbolt/mole/update_message"
+     ensure_user_dir "$(dirname "$msg_cache")"
+     ensure_user_file "$msg_cache"
+ 
+@@ -1271,7 +1271,7 @@
+     local update_tag="V${latest#V}"
+     local config_dir="${MOLE_CONFIG_DIR:-$SCRIPT_DIR}"
+     if [[ ! -f "$config_dir/lib/core/common.sh" ]]; then
+-        config_dir="$HOME/.config/mole"
++        config_dir="$HOME/Library/Application Support/BurrowBolt/mole"
+     fi
+ 
+     _run_staged_installer() {
+@@ -1348,7 +1348,7 @@
+     fi
+ 
+     rm -f "$tmp_installer"
+-    rm -f "$HOME/.cache/mole/update_message"
++    rm -f "$HOME/Library/Caches/com.masonjames.burrowbolt/mole/update_message"
+ 
+     # Cleanup and reset trap
+     _update_cleanup
+--- a/lib/manage/whitelist.sh
++++ b/lib/manage/whitelist.sh
+@@ -18,9 +18,9 @@
+ source "$_MOLE_MANAGE_DIR/../optimize/catalog.sh"
+ 
+ # Config file paths
+-readonly WHITELIST_CONFIG_CLEAN="$HOME/.config/mole/whitelist"
+-readonly WHITELIST_CONFIG_OPTIMIZE="$HOME/.config/mole/whitelist_optimize"
+-readonly WHITELIST_CONFIG_OPTIMIZE_LEGACY="$HOME/.config/mole/whitelist_checks"
++readonly WHITELIST_CONFIG_CLEAN="$HOME/Library/Application Support/BurrowBolt/mole/whitelist"
++readonly WHITELIST_CONFIG_OPTIMIZE="$HOME/Library/Application Support/BurrowBolt/mole/whitelist_optimize"
++readonly WHITELIST_CONFIG_OPTIMIZE_LEGACY="$HOME/Library/Application Support/BurrowBolt/mole/whitelist_checks"
+ 
+ # Default / safety whitelist patterns defined in lib/core/base.sh:
+ # - DEFAULT_WHITELIST_PATTERNS

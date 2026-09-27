@@ -24,8 +24,10 @@ struct ContentView: View {
                     // seconds after every scan with the panel open.
                     HStack(spacing: 0) {
                         if showTable {
-                            OutlinePanel(model: model)
-                                .frame(width: listWidth)
+                            Group {
+                                if model.showLargest || !model.searchText.isEmpty { InventoryResults(model:model) }
+                                else { OutlinePanel(model:model) }
+                            }.frame(width: listWidth)
                             ListDivider(width: $listWidth)
                         }
                         Group {
@@ -63,6 +65,7 @@ struct ContentView: View {
                 .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
         }
         .toolbar { toolbar }
+        .searchable(text:$model.searchText,placement:.toolbar,prompt:"Filter names or paths")
         .task {
             model.agentEnv = await AgentLocator.find()
             model.autoStartIfReady()
@@ -89,9 +92,9 @@ struct ContentView: View {
             Image(systemName: "lock.shield")
                 .font(.system(size: 44, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("BlitzTree needs Full Disk Access")
+            Text("BurrowBolt needs Full Disk Access")
                 .font(.title2.weight(.semibold))
-            Text("System Settings → Privacy & Security → Full Disk Access.\nRemove any old BlitzTree rows, then add /Applications/BlitzTree.app.\nmacOS only applies the permission to a freshly launched app.")
+            Text("System Settings → Privacy & Security → Full Disk Access.\nRemove any old BurrowBolt rows, then add /Applications/BurrowBolt.app.\nmacOS only applies the permission to a freshly launched app.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .font(.callout)
@@ -149,6 +152,7 @@ struct ContentView: View {
             .disabled(model.scanning || model.cleanupTrash.running)
             .help("Choose what to scan")
 
+            if model.scanning { Button("Cancel Scan") { model.cancelScan() } }
             Button {
                 model.startScan()
             } label: {
@@ -181,6 +185,9 @@ struct ContentView: View {
             }
             .help("Show free space in the map")
 
+            Toggle(isOn:$model.showLargest) { Label("Largest Files",systemImage:"list.number") }
+                .help("Browse the largest files in the existing scan")
+                .onChange(of:model.showLargest) { if model.showLargest { showTable = true } }
             Toggle(isOn: $showTable) {
                 Label("Directory List", systemImage: "sidebar.leading")
             }
@@ -189,7 +196,7 @@ struct ContentView: View {
             Toggle(isOn: $showCleanup) {
                 Label("Clean Up", systemImage: "sparkles")
             }
-            .help("Show folders that are safe to clean up")
+            .help("Review disk insights and validated cleanup candidates")
         }
     }
 
@@ -291,8 +298,8 @@ private struct ScanStatusBar: View {
                             // Root-owned system dirs: unreadable by design,
                             // not a permissions problem the user can fix.
                             let gap = model.unscannedBytes > 1_000_000_000
-                                ? " · ~\(Fmt.size(model.unscannedBytes)) root-only" : ""
-                            Text("\(tree.errors) system folders unreadable\(gap)")
+                                ? " · ~\(Fmt.size(model.unscannedBytes)) unaccounted" : ""
+                            Text("\(tree.errors) folders unreadable\(gap)")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                         } else {
@@ -310,7 +317,7 @@ private struct ScanStatusBar: View {
                         .monospacedDigit()
                 }
             } else {
-                Text("BlitzTree").foregroundStyle(.tertiary)
+                Text("BurrowBolt").foregroundStyle(.tertiary)
                 Spacer()
             }
         }

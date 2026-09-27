@@ -77,6 +77,15 @@ nonisolated final class Tree: @unchecked Sendable {
     func name(_ node: Int) -> String { names[node] }
     func path(_ node: Int) -> String { names[node] }
     func displayPath(_ node: Int) -> String { names[node] }
+    func drawn(_ node: Int, isDrawn: (Int) -> Bool) -> Int? {
+        var cur = node
+        while !isDrawn(cur) {
+            let parent = parents[cur]
+            guard parent != UInt32.max, alloc[Int(parent)] <= 2 * alloc[node] else { return nil }
+            cur = Int(parent)
+        }
+        return cur
+    }
 }
 
 @MainActor final class ScanModel {
@@ -87,7 +96,11 @@ nonisolated final class Tree: @unchecked Sendable {
     var hovered: Int?
     var selection: Int?
     var scanRoot = "fixture"
+    var searchText = ""
+    var searchResults: [Int] = []
     var agentRun: AgentRun?
+    func didRender(_ tree: Tree) {}
+    func reveal(_ node: Int) { selection = node }
 }
 @MainActor struct AgentRun { func highlights(in tree: Tree?) -> [Int] { [] } }
 enum Fmt {
@@ -407,5 +420,15 @@ enum Fmt {
                     after: { for p in points.prefix(1000) { sink &+= tm.hit(p)?.node ?? -1 } })
             precondition(sink != .min)
         }
+    }
+}
+
+// Rendering never executes a context-menu action. A fail-loud stand-in keeps
+// this harness focused on the production canvas without starting a worker.
+@MainActor final class CleanupCoordinator {
+    static let shared = CleanupCoordinator()
+    func candidates(for paths: [String]) -> [String]? { nil }
+    func trash(_ paths: [String]) async -> (moved: [URL], error: String?) {
+        preconditionFailure("Rendering harness must never execute cleanup")
     }
 }

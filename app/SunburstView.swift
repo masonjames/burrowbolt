@@ -105,6 +105,7 @@ final class SunburstNSView: NSView {
         litSegments = nil
         let laidOut = Date()
         bitmap = render()
+        model.didRender(tree)
         if ProcessInfo.processInfo.environment["BZ_TIMING"] != nil {
             NSLog("BZ rings: %d arcs, layout %.1f ms, paint %.1f ms", segments.count,
                   laidOut.timeIntervalSince(started) * 1000, -laidOut.timeIntervalSinceNow * 1000)
