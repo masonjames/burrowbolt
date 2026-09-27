@@ -2,7 +2,7 @@
   "schema": 1,
   "blitztree": {
     "repository": "https://github.com/ahmedkhaleel2004/blitztree",
-    "commit": "699fd919d58cbb6b33055d5404890071c6b9c070"
+    "commit": "d68ff95fdc5fbe979bf93c845faf276631d15f33"
   },
   "mole": {
     "repository": "https://github.com/tw93/Mole",
