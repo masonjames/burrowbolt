@@ -2,14 +2,18 @@ import AppKit
 import SwiftUI
 import Observation
 
-/// A folder that is safe to delete because a tool rebuilds or re-downloads
-/// it on demand: package installs, build output, caches.
+/// A measured finding. Only the worker can validate an action against live guards.
 nonisolated struct CleanupItem: Identifiable, Sendable {
     let node: Int
     let path: String
     let display: String
     let kind: String
     let bytes: UInt64
+    var category = "legacy"
+    var complete = true
+    var generation = ""
+    var canReview = false
+    var blockingReason: String?
     var id: Int { node }
 }
 
@@ -45,17 +49,8 @@ final class CleanupTrashBatch {
         guard !running else { return nil }
         running = true
         return Task {
-            let failed = await Task.detached(priority: .userInitiated) {
-                var failed: [String] = []
-                for item in items {
-                    do {
-                        try FileManager.default.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: nil)
-                    } catch {
-                        failed.append("\(item.display): \(error.localizedDescription)")
-                    }
-                }
-                return failed
-            }.value
+            let result = await CleanupCoordinator.shared.trash(items)
+            let failed = result.error.map { [$0] } ?? []
             failures.append(contentsOf: failed)
             running = false
             completion(failed)
@@ -72,12 +67,15 @@ struct CleanupPanel: View {
 
     private var agent: InstalledAgent? { model.preferredAgent }
 
-    private var pickedItems: [CleanupItem] { model.cleanup.filter { picked.contains($0.id) } }
+    private var pickedItems: [CleanupItem] {
+        let chosen = model.cleanup.filter { picked.contains($0.id) && $0.canReview }
+        return chosen.filter { item in !chosen.contains { $0.id != item.id && item.path.hasPrefix($0.path + "/") } }
+    }
     private var pickedBytes: UInt64 { pickedItems.reduce(0) { $0 + $1.bytes } }
-    private var totalBytes: UInt64 { model.cleanup.reduce(0) { $0 + $1.bytes } }
 
     var body: some View {
-        Group {
+        VStack(spacing:0) {
+            FindingInspector(model:model)
             if let run = model.agentRun {
                 AgentRunView(run: run, model: model, retry: { model.startAgent(run.agent) }) {
                     run.cancel()
@@ -93,7 +91,7 @@ struct CleanupPanel: View {
             Button("Move to Trash (\(Fmt.size(pickedBytes)))", role: .destructive) { trashPicked() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("You can put them back from the Trash until you empty it. The tools that made them rebuild them when needed.")
+            Text("You can put them back from the Trash until you empty it. Review recovery implications in the inspector.")
         }
         .alert("Some folders couldn't be moved", isPresented: .constant(!model.cleanupTrash.failures.isEmpty)) {
             Button("OK") { model.cleanupTrash.clearFailures() }
@@ -105,28 +103,41 @@ struct CleanupPanel: View {
     private var reclaimable: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Reclaimable")
+                Text("Disk insights")
                     .font(.headline)
-                Text(model.cleanup.isEmpty ? "Nothing large to clean up"
-                     : "\(Fmt.size(totalBytes)) in \(model.cleanup.count) folders")
+                Text(model.cleanup.isEmpty ? "No candidates found"
+                     : "\(model.cleanup.count) findings · select items to review")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             .padding(12)
+            if !model.enrichmentStatus.isEmpty {
+                Text(model.enrichmentStatus).font(.caption).foregroundStyle(.secondary).padding(.horizontal,12)
+                    .help(model.enrichmentFailures.joined(separator:"\n"))
+            }
 
+            if let snapshots = model.localSnapshotCount {
+                Text("\(snapshots) local Time Machine snapshots · size unknown").font(.caption).foregroundStyle(.secondary).padding(.horizontal,12)
+            }
             List(model.cleanup) { item in
                 HStack(alignment: .top, spacing: 8) {
                     Toggle("", isOn: Binding(
                         get: { picked.contains(item.id) },
-                        set: { on in if on { picked.insert(item.id) } else { picked.remove(item.id) } }
+                        set: { on in
+                            if on {
+                                for other in model.cleanup where other.path.hasPrefix(item.path + "/") || item.path.hasPrefix(other.path + "/") { picked.remove(other.id) }
+                                picked.insert(item.id)
+                            } else { picked.remove(item.id) }
+                        }
                     ))
                     .labelsHidden()
                     .toggleStyle(.checkbox)
+                    .disabled(!item.canReview)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(item.display)
                             .lineLimit(1)
                             .truncationMode(.head)
-                        Text(item.kind)
+                        Text(item.blockingReason ?? item.kind)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -139,6 +150,10 @@ struct CleanupPanel: View {
                 .help(item.display)
                 .onTapGesture { model.reveal(item.node) }
                 .contextMenu {
+                    Button("Exclude from cleanup") {
+                        CleanupCoordinator.shared.exclude(item.path)
+                        model.startScan()
+                    }
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
                     }
@@ -148,6 +163,9 @@ struct CleanupPanel: View {
             .disabled(model.cleanupTrash.running)
 
             Divider()
+            if model.cleanupTrash.running || CleanupCoordinator.shared.running {
+                Button("Cancel remaining cleanup") { CleanupCoordinator.shared.cancel() }.padding(8)
+            }
             VStack(spacing: 8) {
                 agentButton
                     .disabled(model.cleanupTrash.running)
@@ -254,7 +272,7 @@ struct CleanupPanel: View {
 // MARK: - Agent run
 
 /// The agent's work, live: its steps while it looks, the plan as it is
-/// written, then BlitzTree's own cleanup and the space it gave back.
+/// written, then BurrowBolt's own cleanup and the space it gave back.
 private struct AgentRunView: View {
     let run: AgentRun
     let model: ScanModel

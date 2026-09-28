@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{c_int, c_void, CStr, CString};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 // ---- FFI: getattrlistbulk ----
@@ -135,6 +135,8 @@ impl Tree {
 
 #[derive(Default)]
 pub struct Progress {
+    /// Cooperative cancellation, checked between directory batches.
+    pub cancelled: AtomicBool,
     pub files: AtomicU64,
     pub dirs: AtomicU64,
     pub bytes: AtomicU64,
@@ -182,6 +184,7 @@ thread_local! {
 /// Read all entries of one directory in bulk into `s`. None if it can't be
 /// opened, else whether every entry was read.
 fn read_dir_bulk(path: &CStr, s: &mut Scratch, progress: &Progress) -> Option<bool> {
+    if progress.cancelled.load(Ordering::Relaxed) { return None; }
     s.entries.clear();
     s.names.clear();
     if s.buf.is_empty() {
@@ -223,6 +226,7 @@ fn read_dir_bulk(path: &CStr, s: &mut Scratch, progress: &Progress) -> Option<bo
 
     let mut complete = true;
     loop {
+        if progress.cancelled.load(Ordering::Relaxed) { complete = false; break; }
         let n = unsafe {
             getattrlistbulk(
                 fd,
@@ -737,6 +741,16 @@ mod tests {
         let len = e.len() as u32;
         e[..4].copy_from_slice(&len.to_le_bytes());
         e
+    }
+
+    #[test]
+    fn cancelled_scan_is_incomplete_and_does_not_walk() {
+        let progress = Progress::default();
+        progress.cancelled.store(true, Ordering::Relaxed);
+        let tree = scan(Path::new("/Applications"), &progress);
+        assert_eq!(tree.len(), 1);
+        assert!(!tree.complete[0]);
+        assert_eq!(progress.files.load(Ordering::Relaxed), 0);
     }
 
     #[test]

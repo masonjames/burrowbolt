@@ -21,25 +21,30 @@ for old,new in changes.items():
     source=source.replace(old,new)
 p.write_text(source)
 p=Path(sys.argv[2]); source=p.read_text()
-old='try FileManager.default.trashItem(at: URL(fileURLWithPath: item.path), resultingItemURL: nil)'
+old='await CleanupCoordinator.shared.trash(items)'
 assert source.count(old)==1, 'Expected one manual-trash operation'
-p.write_text(source.replace(old, 'try AgentBenchmarkTrash.move(item)'))
+p.write_text(source.replace(old, 'await AgentBenchmarkTrash.batch(items)'))
 p=Path(sys.argv[3]); source=p.read_text()
-old='''    func startAgent(_ agent: InstalledAgent) {
-'''
-new='''    func startAgent(_ agent: InstalledAgent) {
-        AgentBenchmarkLaunch.agentStarts += 1
-'''
-assert source.count(old)==1, 'Expected one agent start'
+old='''        if let agent = preferredAgent {
+            startAgent(agent)
+        } else {'''
+new='''        if preferredAgent != nil {
+            if !cleanupTrash.running { AgentBenchmarkLaunch.autoStarts += 1 }
+        } else {'''
+assert source.count(old)==1, 'Expected one automatic agent launch'
+source=source.replace('private var discoveryReady = false','var discoveryReady = false')
 p.write_text(source.replace(old, new))
 PY
 clang -O2 -mmacosx-version-min=14.0 -c benchmarks/ui_fixture.c -o "$AGENT_BENCH_TMP/fixture.o"
-swiftc "$AGENT_BENCH_TMP"/app/Agent.swift "$AGENT_BENCH_TMP"/app/Cleanup.swift \
+SPARKLE=$(python3 scripts/fetch-sparkle.py)
+SENTRY=$(python3 scripts/fetch-sentry.py)
+swiftc "$AGENT_BENCH_TMP/app/Diagnostics.swift" "$AGENT_BENCH_TMP"/app/Worker.swift "$AGENT_BENCH_TMP"/app/Insights.swift "$AGENT_BENCH_TMP"/app/Updater.swift "$AGENT_BENCH_TMP"/app/Agent.swift "$AGENT_BENCH_TMP"/app/Cleanup.swift \
   "$AGENT_BENCH_TMP"/app/ContentView.swift "$AGENT_BENCH_TMP"/app/Model.swift \
   "$AGENT_BENCH_TMP"/app/Treemap.swift "$AGENT_BENCH_TMP"/app/TreemapView.swift "$AGENT_BENCH_TMP"/app/SunburstView.swift \
   benchmarks/AgentReference.swift benchmarks/AgentPerformance.swift "$AGENT_BENCH_TMP/fixture.o" \
   -import-objc-header benchmarks/ui_fixture.h \
   -O -parse-as-library -swift-version 6 -default-isolation MainActor \
   -target arm64-apple-macos14.0 -framework AppKit -framework SwiftUI \
+  -F "$SENTRY" -framework Sentry -Xlinker -rpath -Xlinker "$SENTRY" -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker "$SPARKLE" \
   -o "$AGENT_BENCH_TMP/agent-bench"
 "$AGENT_BENCH_TMP/agent-bench" "$@"

@@ -1,0 +1,37 @@
+name: BurrowBolt checks
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Upstream workflow contract
+        run: python3 tests/test_upstream.py
+      - name: Locked Rust toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal && rustup default 1.98.1
+      - name: Validate app, worker, CLI and rendering
+        run: scripts/validate.sh
+      - name: Paired performance investigation gate
+        run: python3 benchmarks/ci-performance.py > build/performance.txt
+      - name: Mole upstream safeguards
+        run: python3 scripts/fetch-bats.py && scripts/test-mole.sh > build/mole-tests.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation
+          path: |
+            build/symbols/
+            build/validation*
+            build/mole-tests.txt
+            build/performance*
+            build/first-map/results.json
+            build/perf-results/*.json

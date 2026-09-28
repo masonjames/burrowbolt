@@ -2,7 +2,7 @@
 //! progress counters, then receives the finished tree as flat arrays
 //! (zero-copy: Swift reads the buffers in place until bz_free).
 
-use std::ffi::{c_char, c_int, CStr, CString};
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -39,6 +39,20 @@ fn with_cleanup(tree: Tree) -> Flat {
 /// Start a scan on background threads. Returns a handle immediately.
 #[no_mangle]
 pub extern "C" fn bz_scan_start(path: *const c_char) -> *mut BzScan {
+    bz_scan_start_notifying(path, None, std::ptr::null_mut())
+}
+
+/// As `bz_scan_start`, with one notification after the result is published.
+/// The callback runs on the scan thread, including after cancellation/free;
+/// its context must remain valid until then. It must dispatch UI work itself.
+#[no_mangle]
+pub extern "C" fn bz_scan_start_notifying(
+    path: *const c_char,
+    notify: Option<extern "C" fn(*mut c_void)>,
+    context: *mut c_void,
+) -> *mut BzScan {
+    // Only the callback uses this opaque context, on its documented thread.
+    let context = context as usize;
     let path = unsafe { CStr::from_ptr(path) };
     let path = PathBuf::from(String::from_utf8_lossy(path.to_bytes()).into_owned());
 
@@ -65,6 +79,7 @@ pub extern "C" fn bz_scan_start(path: *const c_char) -> *mut BzScan {
             }
             *result.lock().unwrap() = Some(flat);
             done.store(true, Ordering::Release);
+            if let Some(notify) = notify { notify(context as *mut c_void); }
         });
     }
 
@@ -122,6 +137,7 @@ getter!(bz_alloc, alloc, u64);
 getter!(bz_logical, logical, u64);
 getter!(bz_nfiles, n_files, u32);
 getter!(bz_flags, flags, u8);
+getter!(bz_complete, complete, bool);
 getter!(bz_child_off, child_off, u32);
 getter!(bz_children, children, u32);
 getter!(bz_name_off, name_off, u32);
@@ -165,9 +181,18 @@ pub extern "C" fn bz_errors(h: *mut BzScan) -> u64 {
     h.flat.as_ref().map_or(0, |f| f.tree.errors)
 }
 
+/// Request cancellation without invalidating the handle or its buffers.
+#[no_mangle]
+pub extern "C" fn bz_cancel(h: *mut BzScan) {
+    if let Some(h) = unsafe { h.as_ref() } {
+        h.progress.cancelled.store(true, Ordering::Relaxed);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn bz_free(h: *mut BzScan) {
     if !h.is_null() {
+        bz_cancel(h);
         drop(unsafe { Box::from_raw(h) });
     }
 }
@@ -177,6 +202,32 @@ pub extern "C" fn bz_free(h: *mut BzScan) {
 mod tests {
     use super::*;
     use crate::NO_PARENT;
+
+    #[test]
+    fn completion_publishes_tree_and_outlives_cancelled_handle() {
+        use std::sync::mpsc;
+        extern "C" fn notify(context: *mut c_void) {
+            let sender = unsafe { Box::from_raw(context as *mut mpsc::Sender<()>) };
+            sender.send(()).unwrap();
+        }
+        // An absent path completes without reading any user data.
+        let path = CString::new(format!("/burrowbolt-missing-fixture-{}", std::process::id())).unwrap();
+        for free_early in [false, true] {
+            let (sender, receiver) = mpsc::channel::<()>();
+            let context = Box::into_raw(Box::new(sender)).cast();
+            let handle = bz_scan_start_notifying(path.as_ptr(), Some(notify), context);
+            if free_early { bz_cancel(handle); bz_free(handle); }
+            receiver.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            assert!(receiver.try_recv().is_err(), "one notification per scan");
+            if !free_early {
+                let (mut files, mut dirs, mut bytes, mut done) = (0, 0, 0, 0);
+                bz_progress(handle, &mut files, &mut dirs, &mut bytes, &mut done);
+                assert_eq!(done, 1);
+                assert_eq!(bz_take_tree(handle), 1);
+                bz_free(handle);
+            }
+        }
+    }
 
     #[test]
     fn bridge_exposes_the_shared_candidates_and_labels() {

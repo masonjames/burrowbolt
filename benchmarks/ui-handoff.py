@@ -47,7 +47,11 @@ try:
         dest.write_text(source)
         files.append(str(dest))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["swiftc", *files, str(ROOT / "benchmarks/UIHandoff.swift"),
+    frameworks=[]
+    for dependency in ("sparkle", "sentry"):
+        folder=subprocess.check_output(["python3",str(ROOT/("scripts/fetch-"+dependency+".py"))],text=True).strip()
+        frameworks += ["-F",folder,"-framework",dependency.capitalize(),"-Xlinker","-rpath","-Xlinker",folder]
+    subprocess.run(["swiftc", *frameworks, *files, str(ROOT / "benchmarks/UIHandoff.swift"),
                     "-import-objc-header", str(ROOT / "app/bz.h"),
                     "-O", "-parse-as-library", "-swift-version", "6", "-default-isolation", "MainActor",
                     *( ["-whole-module-optimization"] if args.wmo else [] ),

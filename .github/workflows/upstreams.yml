@@ -1,0 +1,23 @@
+name: Review upstream updates
+on:
+  schedule:
+    - cron: '23 10 * * 1'
+  workflow_dispatch:
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+jobs:
+  updates:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        upstream: [blitztree, mole]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Open a separate review branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/update-upstream.py '${{ matrix.upstream }}'

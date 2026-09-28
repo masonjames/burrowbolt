@@ -77,6 +77,15 @@ nonisolated final class Tree: @unchecked Sendable {
     func name(_ node: Int) -> String { names[node] }
     func path(_ node: Int) -> String { names[node] }
     func displayPath(_ node: Int) -> String { names[node] }
+    func drawn(_ node: Int, isDrawn: (Int) -> Bool) -> Int? {
+        var cur = node
+        while !isDrawn(cur) {
+            let parent = parents[cur]
+            guard parent != UInt32.max, alloc[Int(parent)] <= 2 * alloc[node] else { return nil }
+            cur = Int(parent)
+        }
+        return cur
+    }
 }
 
 @MainActor final class ScanModel {
@@ -87,7 +96,11 @@ nonisolated final class Tree: @unchecked Sendable {
     var hovered: Int?
     var selection: Int?
     var scanRoot = "fixture"
+    var searchText = ""
+    var searchResults: [Int] = []
     var agentRun: AgentRun?
+    func didRender(_ tree: Tree) {}
+    func reveal(_ node: Int) { selection = node }
 }
 @MainActor struct AgentRun { func highlights(in tree: Tree?) -> [Int] { [] } }
 enum Fmt {
@@ -245,9 +258,9 @@ enum Fmt {
             else { b.append(ms(after)); a.append(ms(before)) }
         }
         let old = a.sorted()[4], new = b.sorted()[4]
-        print(String(format: "%@,%.3f,%.3f,%.2fx", label, old, new, old / new))
-        print("samples,\(label),baseline,\(a.map { String(format: "%.3f", $0) }.joined(separator: ","))")
-        print("samples,\(label),optimized,\(b.map { String(format: "%.3f", $0) }.joined(separator: ","))")
+        print(String(format: "%@,%.6f,%.6f,%.2fx", label, old, new, old / new))
+        print("samples,\(label),baseline,\(a.map { String(format: "%.6f", $0) }.joined(separator: ","))")
+        print("samples,\(label),optimized,\(b.map { String(format: "%.6f", $0) }.joined(separator: ","))")
     }
 
     static func main() {
@@ -402,10 +415,22 @@ enum Fmt {
             measure("sunburst_hits_\(kind)_50000",
                     before: { for p in points { sink &+= hitID(oldSB.hit(p)) } },
                     after: { for p in points { sink &+= hitID(sb.hit(p)) } })
-            measure("treemap_hits_\(kind)_1000",
-                    before: { for p in points.prefix(1000) { sink &+= oldTM.hit(p)?.node ?? -1 } },
-                    after: { for p in points.prefix(1000) { sink &+= tm.hit(p)?.node ?? -1 } })
+            // A 1,000-hit deep-tree sample takes ~40 microseconds. Batch the
+            // same 50,000 points as rings so scheduler/timer noise is measurable.
+            measure("treemap_hits_\(kind)_50000",
+                    before: { for p in points { sink &+= oldTM.hit(p)?.node ?? -1 } },
+                    after: { for p in points { sink &+= tm.hit(p)?.node ?? -1 } })
             precondition(sink != .min)
         }
+    }
+}
+
+// Rendering never executes a context-menu action. A fail-loud stand-in keeps
+// this harness focused on the production canvas without starting a worker.
+@MainActor final class CleanupCoordinator {
+    static let shared = CleanupCoordinator()
+    func candidates(for paths: [String]) -> [String]? { nil }
+    func trash(_ paths: [String]) async -> (moved: [URL], error: String?) {
+        preconditionFailure("Rendering harness must never execute cleanup")
     }
 }

@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 enum AgentBenchmarkLaunch {
     static var calls = 0
-    static var agentStarts = 0
+    static var autoStarts = 0
     static func record(_ input: String) {
         precondition(!input.isEmpty)
         calls += 1
@@ -55,6 +55,15 @@ nonisolated final class AgentBenchmarkTrash: @unchecked Sendable {
         if item.node == 2 || item.node == 7 {
             throw NSError(domain: "OfflineTrash", code: item.node, userInfo: [NSLocalizedDescriptionKey: "injected failure"])
         }
+    }
+    static func batch(_ items: [CleanupItem]) async -> (moved: [URL], error: String?) {
+        await Task.detached {
+            var errors: [String] = []
+            for item in items {
+                do { try move(item) } catch { errors.append("\(item.display): \(error.localizedDescription)") }
+            }
+            return ([],errors.isEmpty ? nil : errors.joined(separator:"\n"))
+        }.value
     }
     var nodes: [Int] { lock.lock(); defer { lock.unlock() }; return moved }
 }
@@ -147,7 +156,7 @@ private func plan(_ count: Int, pathLength: Int = 96, pathsPerItem: Int = 1) -> 
     return json(["summary": "Twelve caches, unchanged.", "items": items])
 }
 private func check(_ condition: @autoclosure () -> Bool, _ message: String) {
-    precondition(condition(), message)
+    if !condition() { FileHandle.standardError.write(Data(("FAIL: " + message + "\n").utf8)); exit(1) }
 }
 private func ms(_ work: () -> Void) -> Double {
     let start = DispatchTime.now().uptimeNanoseconds; work()
@@ -277,7 +286,9 @@ struct AgentPerformance {
             }
             if kind == .codex {
                 records.append(["id": 1, "result": [:]])
+                records.append(["id": 4, "result": ["config":["mcp_servers":["fixture":["enabled":true]]]]])
                 records.append(["id": 2, "result": ["thread": ["id": "offline-thread"]]])
+                records.append(["id":5,"result":["data":[["runtimeStatus":"disabled","tools":[:]]]]])
             }
             appendPlan()
             if restart { appendPlan() }
@@ -285,6 +296,10 @@ struct AgentPerformance {
             else { records.append(["type": "result", "structured_output": try! JSONSerialization.jsonObject(with: Data(plan.utf8)), "subtype": "success"]) }
             return Data((records.map(json).joined(separator: "\n") + "\n").utf8)
         }
+        let isolation = AgentCapture()
+        let isolated = AgentStreamReader(kind:.codex,prompt:"offline",folder:"/fixture",write:{ isolation.record("write:" + canonical($0)) },done:{ isolation.record("done") },emit:{ isolation.record(eventSignature($0)) })
+        isolated.feed(Data((json(["id":2,"result":["thread":["id":"fixture"]]])+"\n"+json(["id":5,"result":["data":[["runtimeStatus":"connected","tools":["unsafe":[:]]]]]])+"\n").utf8))
+        check(isolation.values.contains("done") && !isolation.values.contains(where:{ $0.contains("turn/start") }),"Codex started a model turn with external tools enabled")
         for kind in AgentKind.allCases {
             let bytes = Data("not-json\n\n".utf8) + stream(kind, plan: normal, restart: true)
             for width in [1, 7, 4096, 16384, bytes.count] {
@@ -340,6 +355,7 @@ struct AgentPerformance {
         check(AgentBenchmarkLaunch.calls == 1 && completed.preparationTask == nil, "Uncancelled preparation did not launch exactly once")
         let model = ScanModel()
         model.tree = tree
+        model.discoveryReady = true
         model.agentEnv = AgentEnvironment(agents: [agent], loaded: true)
         let batch = model.cleanupTrash
         var selected = (0..<10).map { CleanupItem(node: $0, path: "/offline/\($0)", display: "item-\($0)", kind: "fixture", bytes: 1) }
@@ -353,8 +369,8 @@ struct AgentPerformance {
         }!
         selected.removeAll() // The batch must retain the originally captured items.
         check(batch.running, "Busy state was not set synchronously")
-        model.openPanelAfterLaunchScan()
-        check(model.panelRequests == 0, "Launch panel opened while trash was busy")
+        model.autoStartIfReady()
+        check(AgentBenchmarkLaunch.autoStarts == 0, "Automatic planning started while trash was busy")
         check(batch.start(selected) { _ in completions += 1 } == nil, "Busy batch accepted duplicate work")
         for _ in 0..<1000 {
             if AgentBenchmarkGate.shared.hasEntered { break }
@@ -366,12 +382,12 @@ struct AgentPerformance {
         check(heartbeat == 5 && batch.running && completions == 0, "UI did not remain responsive during blocked trash I/O")
         AgentBenchmarkGate.shared.release(); await trashTask.value
         check(AgentBenchmarkTrash.shared.nodes == Array(0..<10), "Batch did not preserve the captured selection")
-        check(failures == ["item-2: injected failure", "item-7: injected failure"], "Per-item trash failures changed")
+        check(failures == ["item-2: injected failure\nitem-7: injected failure"], "Per-item trash failures changed")
         check(completions == 1 && !batch.running, "Batch did not complete/rescan exactly once")
         check(batch.failures == failures, "Controller did not retain failures after the panel callback")
         failures = [] // Discard the panel's local copy, as closing the inspector does.
         await Task.yield()
-        let retainedFailures = ["item-2: injected failure", "item-7: injected failure"]
+        let retainedFailures = ["item-2: injected failure\nitem-7: injected failure"]
         check(model.cleanupTrash.failures == retainedFailures, "Closing the panel lost cleanup failures")
         let successfulTask = batch.start([CleanupItem(node: 10, path: "/offline/10", display: "item-10", kind: "fixture", bytes: 1)]) { result in
             check(result.isEmpty, "A successful batch inherited an earlier batch's callback failures")
@@ -380,10 +396,9 @@ struct AgentPerformance {
         check(batch.failures == retainedFailures, "A later batch erased unacknowledged failures")
         batch.clearFailures()
         check(batch.failures.isEmpty, "Acknowledged cleanup failures were not cleared")
-        model.openPanelAfterLaunchScan()
-        model.openPanelAfterLaunchScan()
-        check(model.panelRequests == 1, "Busy cleanup consumed or duplicated the one-shot launch panel")
-        check(AgentBenchmarkLaunch.agentStarts == 0 && model.agentRun == nil, "An agent started without a click")
+        model.autoStartIfReady()
+        model.autoStartIfReady()
+        check(AgentBenchmarkLaunch.autoStarts == 1, "Busy cleanup consumed or duplicated one-shot automatic planning")
         print("PASS: incremental parser split parity; JSONL event/write parity (both agents); prompt byte equality; cancellation prevents launch; trash batch stays off-main, rejects duplicate starts, retains failures until dismissed, completes once")
         guard !CommandLine.arguments.contains("--check-only") else { return }
 

@@ -311,7 +311,7 @@ nonisolated enum TreemapRenderer {
         }
     }
 
-    struct Result {
+    struct Result: Sendable {
         var image: CGImage
         var rects: [TMRect]
         var leaves: [TMRect]

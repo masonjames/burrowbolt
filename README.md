@@ -1,91 +1,44 @@
-<img src="assets/icon.png" width="128" alt="BlitzTree icon">
+# BurrowBolt
 
-# BlitzTree
+**BlitzTree’s speed, Mole’s digging.** A native disk explorer for Apple Silicon Macs running macOS 14 or later.
 
-A fast, native disk-space treemap for macOS, in the spirit of WizTree. It scans a whole Mac (3.6M files) in about 14 seconds.
+BurrowBolt retains BlitzTree’s Rust bulk scanner and Swift/AppKit treemap, and bundles pinned Mole rules for disk insights and selected cleanup. It shows allocated bytes, keeps incomplete scans visible, and defaults removals to Trash. A Claude or Codex agent can automatically propose a plan after the first map; the app validates actions and requires approval before cleanup. Planning sends candidate paths and measured sizes to your selected agent provider. Built-in command/file tools and MCP integrations are disabled for this planning session; incompatible agent versions fail closed.
 
-<p>
-  <img src="assets/screenshot.png" width="49%" alt="BlitzTree treemap view of /Applications">
-  <img src="assets/screenshot-rings.png" width="49%" alt="BlitzTree rings view of /Applications">
-</p>
+This is the initial development implementation. A signed public installer is not yet released. See [acceptance status](docs/ACCEPTANCE.md) for the distinction between implemented behavior and release validation.
 
-## Install
+## Build
 
-**[Download BlitzTree.dmg](https://github.com/ahmedkhaleel2004/blitztree/releases/latest/download/BlitzTree.dmg)** and drag the app into Applications. Requires Apple Silicon and macOS 14 or later.
-
-Signed with a Developer ID and notarized by Apple, so it opens like any other app. Grant Full Disk Access when prompted, then relaunch.
-
-## Features
-
-- Cushion-shaded treemap colored by file type, with a synced Finder-style outline list
-- Prefer DaisyDisk? Switch to rings in the toolbar: click a folder to zoom in, the middle to go back
-- Zoom into folders, reveal in Finder, or move to Trash (with confirmation)
-- Clean Up panel: finds folders that are safe to delete (caches, `node_modules`, Rust `target`, Xcode DerivedData and more) so you can trash them in one go
-- AI cleanup: click "Clean up with Claude Code" (or Codex) and your own agent plans what can go, live in the panel, while the treemap lights up those folders. BlitzTree does the cleanup itself, in two steps you approve: move to Trash, then delete for good. No agent installed? One click sets up Codex (free with a ChatGPT account) or Claude Code
-- Live progress while scanning, and an optional free-space block
-- Native AppKit/SwiftUI, with the Liquid Glass design on macOS 26 and later
-- No telemetry. BlitzTree itself never goes online; the AI cleanup only runs when you click it, using your own agent, which sends folder paths and sizes from the scan (never file contents) to Anthropic or OpenAI
-
-## Performance
-
-| Home folder, 3.1M entries (M4) | Time |
-|---|---|
-| **BlitzTree** | **10.2 s** |
-| Parallel `readdir` + `lstat` | 14.4 s |
-| `du -skx` | 65.3 s |
-
-- `getattrlistbulk(2)` reads a whole directory's metadata in one syscall instead of one `stat` per file.
-- A Rust worker pool keeps many directories in flight, and scan threads run at user-initiated QoS: they stay on performance cores without starving the UI.
-- The treemap is laid out once and painted on every core in parallel, so zooming redraws in a couple of frames.
-
-Method, full results and a comparison with other tools: [BENCHMARKS.md](BENCHMARKS.md).
-
-## Accuracy
-
-Sizes are allocated bytes, matching `du`. Hard-linked files count once, the scan stays on one volume, and cloud-only iCloud folders are never downloaded. Root-only system data that no app can read is reported in the status bar instead of hidden.
-
-## AI cleanup
-
-The agent runs headless and read-only: it only writes a plan from the scan BlitzTree already has. BlitzTree then acts on it behind its own checks, whatever the plan says:
-
-- Only paths inside your home folder, never Documents, Desktop, Photos, iCloud Drive, Mail, keychains or `~/.ssh` (build output such as `node_modules` inside them is allowed, and so are the Codex app's chat folders in `~/Documents/Codex`), never a git repository or a whole folder like `~/Library/Caches`
-- Only each tool's own cache cleanup commands (`uv cache clean`, `brew cleanup`, `npm cache clean` and similar, plus `xcrun simctl` for Xcode simulator runtimes and device data), with no shell syntax
-- Codex chats and projects you used in the last 2 days are left alone
-- Caches of apps that are open are skipped until you quit them
-- "Delete for good" removes only what this cleanup moved to the Trash
-
-## Build from source
-
-Requires Xcode 26 or later and Rust.
+Use an Apple Silicon Mac with Xcode 27 / Swift 6.4, Rust 1.98.1, Python 3, and Git. Exact upstreams and framework checksums are in [`UPSTREAMS.lock`](UPSTREAMS.lock).
 
 ```sh
-./build.sh              # build/BlitzTree.app
-./deploy.sh             # build and install to /Applications
-cargo test --release    # engine tests
+./build.sh
+BURROWBOLT_QA_NO_AGENT=1 build/BurrowBolt.app/Contents/MacOS/BurrowBolt /path/to/folder
+scripts/validate.sh
+scripts/package-development.sh
 ```
 
-The Rust engine hands the finished tree to the Swift UI as flat arrays over a C interface, with no copying. `BlitzTree <path>` scans a specific folder.
+The build downloads and verifies Sparkle 2.10.0 and Sentry Cocoa 9.29.2, stages Mole with strictly applied patches, embeds the worker and all runtime resources, and signs locally with an ad-hoc identity. The resulting app does not require Homebrew, Python, Rust, Go, Mole, or an AI agent on the destination Mac. Developer tools used by optional cleanup rules remain optional.
 
-## JSON CLI for agents and scripts
+A development DMG is written to `dist/development/BurrowBolt.dmg`; it is **not notarized**. Public release builds require Developer ID, notarization, and update-signing credentials. [Release instructions](docs/RELEASING.md).
 
-An optional, read-only CLI uses the same scan engine without opening the GUI
-or launching an AI agent:
+## Using it
 
-```sh
-cargo build --locked --release --features cli --bin blitztree
-./target/release/blitztree scan --root "$HOME/Downloads"
-./target/release/blitztree quick-wins --root "$HOME" --limit 20
-```
+Choose a folder or scan the data volume. Full Disk Access improves coverage; it does not grant privileged cleanup. Select a tile, double-click a folder to zoom, and use Escape, Left Arrow, Delete, or Command-Up to return to its parent. Return zooms into the selected folder. The native outline provides keyboard and accessibility navigation.
 
-`scan` lists the largest directories and files as JSON. `quick-wins` includes
-that inventory plus the Clean Up panel's existing candidates and labels. The
-panel and CLI share one Rust implementation of the rules, with no new heuristics.
-Both report incomplete scans; allocated bytes are not
-a promise of reclaimable space. Neither command modifies the scanned files.
+Search filters names, or paths when the query includes `/`; the treemap highlights matches without rearranging its tiles. “Largest Files” browses the current inventory. Select a finding to see its explanation, size semantics, and blocking reason. An informational finding is never permission to remove data.
 
-The CLI is built from source separately from the app. Its JSON dependency is
-only compiled with the `cli` feature. See [the CLI contract and tests](docs/AGENT_API.md).
+Cleanup rechecks the current candidate and its file identities through Mole’s guards. It can refuse an earlier proposal if an app becomes active or a file changes. Trash is recoverable until separately emptied. BurrowBolt can permanently remove only items for which its current worker holds a successful Trash receipt.
+
+Settings belong to `com.masonjames.burrowbolt`. Mole configuration, logs and cache are redirected only in the app’s staged copy, under BurrowBolt’s directories. Existing Mole settings and `HOME` are unchanged.
+
+Crash and error reporting through Sentry is opt-in under **BurrowBolt → Settings**. Routine macOS unified logs stay local; scanned paths, file names and AI prompts are excluded from reports. Matching crash symbols ship as a separate build artifact. No product analytics is included. [Diagnostics and telemetry](docs/DIAGNOSTICS.md).
+
+## Maintaining the fork
+
+BlitzTree’s source layout, Git history, and internal Rust crate name are retained to reduce merge conflicts. Mole is a pristine squashed subtree in `vendor/mole`; integration patches are outside it. [Maintenance and capability matrix](docs/MAINTENANCE.md).
+
+The weekly workflow proposes separate draft PRs for upstream updates. It never merges them. Review new cleanup coverage and rerun correctness, safety, rendering, and paired performance gates before accepting an update.
 
 ## License
 
-MIT
+The combined application is distributed under GPLv3. BlitzTree’s MIT notice is preserved in `LICENSES/BlitzTree-MIT.txt`, Mole’s notice remains in its subtree, and bundled dependencies include their licenses. Release packaging includes corresponding source and locked Rust dependency source.

@@ -1,0 +1,33 @@
+--- a/tests/clean_core.bats
++++ b/tests/clean_core.bats
+@@ -1617,6 +1617,8 @@
+ 
+     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+ set -euo pipefail
++# This isolated HOME has no real Mail owner. The user's desktop must not affect the fixture.
++pgrep() { return 1; }
+ source "$PROJECT_ROOT/lib/core/common.sh"
+ source "$PROJECT_ROOT/lib/clean/user.sh"
+ _clean_mail_downloads
+--- a/tests/installer_zip.bats
++++ b/tests/installer_zip.bats
+@@ -417,11 +417,12 @@
+         source "$1"
+         rc=0
+         scan_installers_in_path "$HOME/Downloads" > "$2" || rc=$?
+-        mole_rc_timeout "$rc" || exit 1
+-        [[ ! -s "$2" && $SECONDS -lt 6 ]] || exit 1
+-        grep -q first.zip "$INSTALLER_TRACE" || exit 1
+-        grep -q second.zip "$INSTALLER_TRACE" || exit 1
+-        ! grep -q third.zip "$INSTALLER_TRACE" || exit 1
++        mole_rc_timeout "$rc" || { echo "expected timeout, got $rc"; exit 1; }
++        [[ ! -s "$2" ]] || { echo "partial output escaped"; exit 1; }
++        [[ $SECONDS -lt 6 ]] || { echo "elapsed $SECONDS exceeded fixture bound"; exit 1; }
++        grep -q first.zip "$INSTALLER_TRACE" || { echo "first inspection missing"; exit 1; }
++        grep -q second.zip "$INSTALLER_TRACE" || { echo "second inspection missing"; exit 1; }
++        ! grep -q third.zip "$INSTALLER_TRACE" || { echo "third inspection exceeded shared budget"; exit 1; }
+     ' bash "$PROJECT_ROOT/bin/installer.sh" "$BATS_TEST_TMPDIR/scan-output"
+-    [ "$status" -eq 0 ]
+-}
++    if [[ "$status" -ne 0 ]]; then printf "%s\n" "$output"; return 1; fi
++}

@@ -1,0 +1,45 @@
+--- a/bin/installer.sh
++++ b/bin/installer.sh
+@@ -1045,6 +1045,6 @@
+ }
+ 
+ # Only run main if not in test mode
+-if [[ "${MOLE_TEST_MODE:-0}" != "1" ]]; then
++if [[ "${BASH_SOURCE[0]}" == "$0" && "${MOLE_TEST_MODE:-0}" != "1" ]]; then
+     main "$@"
+ fi
+--- a/lib/clean/apps.sh
++++ b/lib/clean/apps.sh
+@@ -291,7 +291,9 @@
+         : > "$scan_tmp_dir/running.txt"
+         local running_probe_succeeded=0
+         # Skip AppleScript during tests to avoid permission dialogs
+-        if [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
++        if [[ "${BURROWBOLT_READ_ONLY:-0}" == "1" ]]; then
++            : # lsappinfo below must succeed; never treat an unqueried process list as empty.
++        elif [[ "${MOLE_TEST_MODE:-0}" != "1" && "${MOLE_TEST_NO_AUTH:-0}" != "1" ]]; then
+             local running_apps=""
+             # On a managed Mac the System Events automation permission is
+             # often undetermined or denied, and this probe then burns its
+@@ -2058,6 +2060,9 @@
+                     log_operation "${MOLE_CURRENT_COMMAND:-clean}" "FAILED" "$container_dir" "stub-container"
+                 fi
+             else
++                if declare -f burrowbolt_informational_target > /dev/null 2>&1; then
++                    burrowbolt_informational_target "$container_dir" "Orphaned container stub; specialized nonrecursive cleanup required"
++                fi
+                 if declare -f record_dry_run_cleanup_target > /dev/null 2>&1; then
+                     local stub_size_kb
+                     local stub_size_rc=0
+--- a/lib/clean/dev.sh
++++ b/lib/clean/dev.sh
+@@ -39,6 +39,9 @@
+             note_activity
+         fi
+     else
++        if [[ -n "$cache_path" ]] && declare -f burrowbolt_informational_target > /dev/null 2>&1; then
++            burrowbolt_informational_target "$cache_path" "$description; requires the owning tool's irreversible cleanup command"
++        fi
+         echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} $description · would clean"
+         note_activity
+     fi

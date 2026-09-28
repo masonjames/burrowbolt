@@ -116,12 +116,14 @@ if args.real:
     subprocess.run(["cargo", "build", "--release", "-q"], check=True, cwd=ROOT)
     app = [str(f) for f in sorted((ROOT / "app").glob("*.swift"))
            if f.name not in ("Main.swift", "Treemap.swift", "TreemapView.swift")]
-    extra = [*app, "-import-objc-header", str(ROOT / "app" / "bz.h"),
+    sparkle=subprocess.check_output(["python3","scripts/fetch-sparkle.py"],cwd=ROOT,text=True).strip()
+    sentry=subprocess.check_output(['python3','scripts/fetch-sentry.py'],cwd=ROOT,text=True).strip()
+    extra = [*app,"-F",sentry,"-framework","Sentry","-Xlinker","-rpath","-Xlinker",sentry,"-F",sparkle,"-framework","Sparkle","-Xlinker","-rpath","-Xlinker",sparkle, "-import-objc-header", str(ROOT / "app" / "bz.h"),
              "-L", str(ROOT / "target" / "release"), "-lblitztree"]
 else:
     extra = []
 subprocess.run(["swiftc", *files, str(runner_path), *extra,
-                "-O", "-parse-as-library", "-swift-version", "6", "-default-isolation", "MainActor",
+                "-O", "-D", "RENDER_BENCHMARK", "-parse-as-library", "-swift-version", "6", "-default-isolation", "MainActor",
                 "-target", "arm64-apple-macos14.0",
                 "-framework", "AppKit", "-framework", "SwiftUI", "-o", str(binary)], check=True, cwd=ROOT)
 print(f"Renderer benchmark binary: {binary}", flush=True)
