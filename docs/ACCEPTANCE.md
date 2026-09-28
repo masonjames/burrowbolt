@@ -1,24 +1,34 @@
 # Acceptance ledger
 
-This ledger tracks evidence; implementation is not release acceptance.
+Implementation is available in the draft BurrowBolt PR. It is **not release accepted**.
 
-- Reviewed baseline: BlitzTree `699fd919d58cbb6b33055d5404890071c6b9c070`; Mole `50790e8ac4b8346a071f9cc64356c7f86b7b142c`.
-- Baseline `/Applications`: 983,837 files, 130,319 directories; warm alternating same-binary medians 1.519 / 1.530 seconds, approximately 68 MB peak footprint. Raw local records: `build/perf-results/baseline-applications.json`. These are baseline observations, not a performance acceptance claim.
-- Rendering harness repaired: fixture now implements the production `Tree.drawn` contract. Pixel/geometry, cushion bands, fractional coverage and hit-testing comparisons pass against the reviewed baseline.
-- Initial worker tests cover containment, replacement, symlink rejection, stale/cancelled generation, selected-item execution, single-use approval, unselected preservation and receipt-only permanent removal. Destructive test sinks are compiled only into the test executable and use isolated fixture directories.
-- Initial adapter tests exercise real Mole discovery, exact selected-path grants, unknown rules, symlinks, and separate configuration/log roots under isolated test homes.
-- Upstream Mole test run: 598 executed; one old-mail fixture depended on the real desktop Mail process. Mail was running, so the production guard correctly kept the file. `integration/mole/test-fixture.patch` isolates that fixture’s process state. The vendored source remains pristine.
+## Verified implementation checks
+
+- Reviewed performance baseline: BlitzTree `699fd919d58cbb6b33055d5404890071c6b9c070`. The application history now also includes upstream v0.5.5 (`d68ff95f`), retaining BurrowBolt automatic planning. Mole remains the pristine `50790e8a` subtree.
+- Engine: 16 passed, one benchmark ignored. Worker protocol: 5 passed. CLI: 20 passed. Adapter: 8 passed, including exact selected paths, active targets, unknown process visibility, namespace separation, and tolerated upstream no-match statuses.
+- Native insights: cache signatures, project pruning, installer/ZIP distinction, old Downloads, lossy path refusal, largest-files cap, and search cap pass.
+- UI/agent algorithm harnesses: outline/cleanup parity, prompt/parser parity, cancellation, retained failures and one-shot automatic planning pass. These are not desktop interaction tests.
+- Renderer: 28 pixel/geometry comparisons, 126 cushion checks, 2,000 fractional checks, 260,708 ring hits and 11,344 treemap hits passed. The baseline fixture's missing `Tree.drawn` contract is repaired.
+- Mole: all 598 patched safeguard tests passed with exit 0. One upstream Mail fixture is isolated from the real running Mail app; production guards are unchanged by that test-only patch.
+- Native Foundation Trash moved only a uniquely created fixture, preserved its sibling, and removed only its own receipt in an earlier backend smoke check. After tightening complete-process visibility, this Mac's unprivileged probe cannot establish that visibility; current production cleanup must refuse rather than bypass it. Deterministic worker tests and isolated adapter tests do not waive that limitation.
+
+## Performance evidence
+
+- Nine alternating `/Applications` scan pairs: 983,837 files / 130,319 directories, identical allocated bytes and error totals. Median baseline 1.51349 seconds; candidate 1.51103 seconds. Median peak footprint 69.19 / 68.78 MB. Raw local evidence: `build/perf-results/burrowbolt-applications.json`.
+- Five offscreen Retina first-map pairs: 1,114,157 nodes, identical bytes/scale. Medians 1.55447 / 1.56064 seconds; longest main-loop-gap medians 34.10 / 24.36 ms. This endpoint excludes visible-window paint. Evidence: `build/first-map/results.json`.
+- Retina rendering: balanced 3.024 / 2.973 ms, wide 6.255 / 5.943 ms, deep 2.017 / 2.053 ms. Ring and hit-test cases remained comparable. These observations do not prove all-machine or all-storage acceptance.
+- An initial 16.4-million-node home profile exposed family-caller/deadline incompatibilities. Those were corrected and tested. A subsequent unlimited ZIP-listing run exceeded 390 seconds; automatic ZIP listing now has a shared 20-second budget and selected-file inspection remains available. Keep these failed runs as evidence, not passing measurements.
 
 ## Required before public release
 
-- [x] All 598 patched Mole safeguard tests passed with exit 0. Owner commands and specialized container-stub removals are explicitly informational in the capability matrix.
-- [ ] No repeatable scan, first-map or rendering regression in paired release comparisons; investigate differences over 5%.
-- [ ] App-and-worker memory, enrichment duration and interactive responsiveness measured.
-- [ ] GUI behavior verified, including stale render discard and cleanup cancellation. Fixture startup rendered 13 nodes with zero unreadable directories; the desktop inspection tool hung before returning an accessibility tree or screenshot, so visual/interactive acceptance remains unverified.
-- [ ] Fresh-machine install, offline operation and Full Disk Access onboarding verified.
+- [ ] No repeatable scan, first-map or rendering regression across required paired workloads, including external storage; 5% triggers investigation rather than permission to regress.
+- [ ] Final app-and-worker memory, enrichment duration and interactive responsiveness reviewed against the bounded implementation.
+- [ ] Representative family coverage and complete process evidence verified on supported desktop configurations; unsupported owner commands and container-stub actions remain informational.
+- [ ] GUI behavior verified, including selection, keyboard access, stale render discard, cleanup cancellation and update deferral. A fixture app rendered 13 nodes, but the desktop inspection tool hung before returning an accessibility tree or screenshot.
+- [ ] Fresh-machine installation, offline operation and Full Disk Access onboarding verified without developer tools.
 - [ ] Minimum macOS 14 tested on a real machine or VM.
 - [ ] Signed/notarized app and DMG assessed successfully.
 - [ ] Real older-to-newer Sparkle update and tampered-update rejection verified.
-- [ ] Draft release reviewed and published; signed appcast served over HTTPS.
+- [ ] Reviewed draft release published; unchanged signed appcast served over HTTPS.
 
-A Developer ID Application identity was found in the user Keychain. A BurrowBolt Sparkle signing key was generated in Keychain; only the public key is in Git. The `burrowbolt-notary` Keychain profile was not present at the initial release preflight.
+A Developer ID Application identity is available in Keychain. The BurrowBolt Sparkle key is also in Keychain; only its public key is tracked. The `burrowbolt-notary` notarization profile was not present at preflight. GitHub Pages has not been enabled or published. Development installers are explicitly unnotarized and disable in-app updates.

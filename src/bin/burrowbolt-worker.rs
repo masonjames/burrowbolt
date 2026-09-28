@@ -805,6 +805,18 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Protocol/identity tests use a deterministic grant. Real Mole process guards
+    // are exercised by test_mole_adapter.py; no test hook enters the release binary.
+    fn fixture_adapter(root: &Path) -> PathBuf {
+        let adapter = root.join("fixture-guard.sh");
+        fs::write(
+            &adapter,
+            b"#!/bin/bash\n[[ -f \"$1\" ]] || exit 1\nprintf 'allowed\\n'\n",
+        )
+        .unwrap();
+        adapter
+    }
+
     #[test]
     fn identity_rejects_replacement_symlink_and_containment_escape() {
         let root =
@@ -837,13 +849,7 @@ mod tests {
         fs::write(&file, b"fixture").unwrap();
         let keep = root.join("keep.dmg");
         fs::write(&keep, b"keep").unwrap();
-        let adapter = std::env::current_dir()
-            .unwrap()
-            .join("build/BurrowBolt.app/Contents/Resources/adapter.sh");
-        assert!(
-            adapter.is_file(),
-            "Run ./build.sh before worker integration tests"
-        );
+        let adapter = fixture_adapter(&root);
         let epoch = AtomicU64::new(0);
         let mut s = Session::new();
         s.home = root.clone();
@@ -903,9 +909,7 @@ mod tests {
         let good = root.join("good.dmg");
         fs::write(&changed, b"original").unwrap();
         fs::write(&good, b"good").unwrap();
-        let adapter = std::env::current_dir()
-            .unwrap()
-            .join("build/BurrowBolt.app/Contents/Resources/adapter.sh");
+        let adapter = fixture_adapter(&root);
         let mut s = Session::new();
         s.home = root.clone();
         let epoch = AtomicU64::new(0);

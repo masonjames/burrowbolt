@@ -10,9 +10,9 @@ For BlitzTree, merge the chosen upstream commit, resolve product differences, an
 
 | Family | Discovery / execution | Protection / check |
 |---|---|---|
-| Project artifacts | Native inventory recognizes all 34 pinned Mole target names; exact selected paths use the project adapter | Actual project root, excluded artifact ancestors, authored-content guard, 7-day activity guard, common Mole guards, worker identities; purge Bats + adapter tests |
-| Installers | DMG, PKG, MPKG, ISO, XIP from inventory; selected user-owned regular files can be reviewed for Trash | Mole common guards, bounded open-file check + worker containment/identity; installer Bats + worker selected-item fixture |
-| Installer ZIP / other archives | Deferred per-archive inspection reuses Mole `is_installer_zip`; non-installer archives remain informational | Complete bounded listing, no cloud placeholders or symlinks, open-file check; installer_zip Bats + adapter fixtures |
+| Project artifacts | Native inventory recognizes all 34 pinned Mole target names; exact selected paths use the project adapter | Actual project root, excluded artifact ancestors, authored-content guard, 7-day activity guard, complete process/open-handle evidence, common Mole guards, worker identities; purge Bats + adapter tests |
+| Installers | DMG, PKG, MPKG, ISO, XIP from inventory; selected user-owned regular files can be reviewed for Trash | Mole common guards, complete process/open-handle evidence + worker containment/identity; installer Bats + worker selected-item fixture |
+| Installer ZIP / other archives | Deferred per-archive inspection reuses Mole `is_installer_zip`; non-installer archives remain informational | Complete bounded listing, no cloud placeholders or symlinks, complete process/open-handle check; installer_zip Bats + adapter fixtures |
 | User essentials and logs | `clean_user_essentials`, structured dry-run records; only `_safe_clean_impl` records can become selective actions | Original per-action callback and common protection predicates; clean_core Bats |
 | App caches | `clean_app_caches` | Original owner, SQLite, protected-data and final callback checks; clean_core / app_caches Bats |
 | Browser data | `clean_browsers` | Original process guards; browser state outside its cache rules remains protected |
@@ -46,3 +46,9 @@ A family is rerun in dry-run mode for selected-item validation. The adapter emit
 Use optimized builds and alternating AB/BA runs over identical inputs. `benchmarks/scan.py` records counts, times and memory; totals must match. `benchmarks/rendering.py` checks geometry/pixels and benchmarks the retained renderer. Its `RENDER_BENCHMARK` flag makes the canvas synchronous only inside the offscreen timing harness; production coalesces work off the main actor. Test scheduling and stale-result behavior separately through the actual app.
 
 Treat 5% as an investigation trigger. Do not accept a repeatable regression because it is smaller than that. Measure first-map latency, app plus worker footprint, enrichment duration, and navigation responsiveness separately; unrelated processes and changing inputs invalidate paired comparisons.
+
+Archive discovery uses inventory metadata immediately. Automatic archive listings share a 20-second background budget (an already-running bounded probe may finish afterward); remaining archives stay informational with an inspector action for selected-file inspection. The deadline does not authorize partial listings. A failed inspection can be retried, but a changed identity requires a new scan.
+
+Native project/installer cleanup reuses Mole's complete-process-visibility predicate. If macOS hides privileged processes from the worker, eligibility remains unknown and cleanup is refused. BurrowBolt never requests elevation to turn that unknown into permission. Adapter fixtures explicitly supply root-visibility evidence while retaining real target-handle queries; they are separate from fresh-machine acceptance.
+
+The `BurrowBolt checks` workflow also runs alternating scanner/first-map measurements on a fixed 50,000-file wide directory plus a 200-level deep tree, and Retina renderer comparisons. Differences above 5% fail for investigation; smaller repeatable regressions still require review. The immutable `performance_baseline` is separate from the moving upstream pin. Hosted runners do not replace paired local/external-drive measurements.
