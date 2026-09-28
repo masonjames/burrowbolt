@@ -2,6 +2,7 @@
 # Local, explicitly unnotarized installer for development verification only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+[[ -z "$(git status --porcelain)" ]] || { print -u2 "Commit changes before packaging a development installer"; exit 1; }
 ./build.sh
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
@@ -14,5 +15,6 @@ if [[ -n ${BURROWBOLT_SIGN_IDENTITY:-} && "$BURROWBOLT_SIGN_IDENTITY" != - ]]; t
     codesign --verify --strict dist/development/BurrowBolt.dmg
 fi
 tar -czf dist/development/BurrowBolt-symbols.tar.gz -C build/symbols .
-(cd dist/development && shasum -a 256 BurrowBolt.dmg BurrowBolt-symbols.tar.gz > SHA256SUMS.txt)
+scripts/package-source.sh dist/development/BurrowBolt-source.tar.gz
+(cd dist/development && shasum -a 256 BurrowBolt.dmg BurrowBolt-source.tar.gz BurrowBolt-symbols.tar.gz > SHA256SUMS.txt)
 print 'Development DMG: dist/development/BurrowBolt.dmg (not notarized; not a public release)'

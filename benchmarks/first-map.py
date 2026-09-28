@@ -19,6 +19,7 @@ if not args.skip_build:
                 expected=subprocess.check_output(['git','show',sha+':'+str(file.relative_to(baseline))],cwd=root)
                 assert file.read_bytes()==expected, 'Baseline source drift: '+str(file)
 sparkle=subprocess.check_output(['python3','scripts/fetch-sparkle.py'],cwd=root,text=True).strip()
+sentry=subprocess.check_output(['python3','scripts/fetch-sentry.py'],cwd=root,text=True).strip()
 for name,source in ([] if args.skip_build else [('baseline',baseline),('candidate',root)]):
     subprocess.run(['cargo','build','--locked','--release','--lib'],cwd=source,check=True)
     stage=out/name;stage.mkdir(exist_ok=True)
@@ -30,7 +31,7 @@ for name,source in ([] if args.skip_build else [('baseline',baseline),('candidat
         destination=stage/file.name;destination.write_text(text);files.append(str(destination))
     subprocess.run(['swiftc',*([] if name=='baseline' else ['-D','BURROWBOLT_BENCHMARK']),*files,str(root/'benchmarks/FirstMap.swift'),'-O','-parse-as-library','-swift-version','6','-default-isolation','MainActor',
         '-import-objc-header',str(source/'app/bz.h'),'-target','arm64-apple-macos14.0','-L',str(source/'target/release'),'-lblitztree',
-        '-F',sparkle,'-framework','Sparkle','-Xlinker','-rpath','-Xlinker',sparkle,'-framework','AppKit','-framework','SwiftUI','-o',str(stage/'first-map')],check=True)
+        *(['-F',sentry,'-framework','Sentry','-Xlinker','-rpath','-Xlinker',sentry] if (source/'app/Diagnostics.swift').exists() else []),'-F',sparkle,'-framework','Sparkle','-Xlinker','-rpath','-Xlinker',sparkle,'-framework','AppKit','-framework','SwiftUI','-o',str(stage/'first-map')],check=True)
 if args.build_only:raise SystemExit(0)
 rows=[]
 for pair in range(args.runs+1):

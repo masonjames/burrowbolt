@@ -39,6 +39,11 @@ import OSLog
         return records.compactMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     }
 
+    func updateDiagnostics() {
+        guard process != nil else { return }
+        Task { _ = try? await request(["op": "diagnostics", "enabled": Diagnostics.enabled]) }
+    }
+
     func cancel() {
         guard process != nil else { return }
         Task { _ = try? await request(["op": "cancel"]) }
@@ -57,7 +62,11 @@ import OSLog
         process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
-        try process.run()
+        var environment = ProcessInfo.processInfo.environment
+        environment["BURROWBOLT_DIAGNOSTICS"] = Diagnostics.enabled ? "1" : "0"
+        process.environment = environment
+        do { try process.run() }
+        catch { Diagnostics.report(.workerLaunchFailed); throw error }
         self.process = process
         input = stdin.fileHandleForWriting
         session = UUID()
@@ -142,6 +151,7 @@ import OSLog
         session = UUID()
         let pending = replies
         replies = [:]
+        if !pending.isEmpty { Diagnostics.report(.workerConnectionLost) }
         Self.log.error("Worker connection closed; pending requests: \(pending.count)")
         for (id, reply) in pending {
             let record: [String: Any] = ["version": 1, "id": id, "event": "error", "body": ["message": message]]
@@ -188,6 +198,7 @@ nonisolated struct WorkerRecords {
         set { UserDefaults.standard.set(newValue, forKey: "cleanup.exclusions") }
     }
 
+    func updateDiagnostics() { worker.updateDiagnostics() }
     func cancel() { worker.cancel() }
     func invalidateScan() { generation = ""; items = [:]; worker.cancel() }
     func discover(_ found: [CleanupItem], tree: Tree) async throws -> [CleanupItem] {
@@ -274,8 +285,9 @@ nonisolated struct WorkerRecords {
         guard !selected.isEmpty, selected.allSatisfy({ $0.generation == generation && $0.canReview }) else {
             return ([], 0, "Selection is unavailable or belongs to an earlier scan")
         }
+        Diagnostics.log.info("Approved cleanup started")
         running = true; AppUpdater.shared.cleanupActive = true
-        defer { running = false; AppUpdater.shared.cleanupActive = false }
+        defer { running = false; AppUpdater.shared.cleanupActive = false; Diagnostics.log.info("Cleanup finished") }
         let ids = selected.map { String($0.node) }
         do {
             // Stop enrichment promptly; candidate identities remain bound to this scan.
@@ -297,6 +309,7 @@ nonisolated struct WorkerRecords {
                 } else { failures.append(body["error"] as? String ?? body["message"] as? String ?? "Cleanup was refused") }
             }
             do { try appendHistory(result) } catch { failures.append("Items moved, but history could not be saved: \(error.localizedDescription)") }
+            Diagnostics.log.info("Trash results; moved: \(moved.count, privacy: .public); refused or failed: \(failures.count, privacy: .public)")
             return (moved, movedBytes, failures.isEmpty ? nil : failures.joined(separator:"\n"))
         } catch { return ([], 0, error.localizedDescription) }
     }
@@ -304,8 +317,9 @@ nonisolated struct WorkerRecords {
         guard !running else { return "Another cleanup is active" }
         let ids = urls.compactMap { receipts[$0] }
         guard ids.count == urls.count else { return "Missing Trash receipt; use Finder to review this item" }
+        Diagnostics.log.info("Approved cleanup started")
         running = true; AppUpdater.shared.cleanupActive = true
-        defer { running = false; AppUpdater.shared.cleanupActive = false }
+        defer { running = false; AppUpdater.shared.cleanupActive = false; Diagnostics.log.info("Cleanup finished") }
         do {
             _ = try await worker.request(["op":"cancel"])
             let records = try await worker.request(["op":"empty","receipts":ids,"confirmedPermanentRemoval":true])

@@ -1,5 +1,9 @@
 //! Bounded NDJSON worker. Paths are data, never shell fragments. The inventory
 //! stays in the app; only explicitly discovered candidates cross this boundary.
+#[cfg(feature = "diagnostics")]
+#[path = "worker/diagnostics.rs"]
+mod diagnostics;
+
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::ffi::{c_char, c_void, CString};
@@ -758,6 +762,12 @@ fn main() {
         eprintln!("BurrowBolt never runs cleanup as root");
         std::process::exit(1);
     }
+    #[cfg(feature = "diagnostics")]
+    let mut diagnostics = diagnostics::Diagnostics::default();
+    #[cfg(feature = "diagnostics")]
+    diagnostics::consent(std::env::var("BURROWBOLT_DIAGNOSTICS").as_deref() == Ok("1"));
+    #[cfg(feature = "diagnostics")]
+    diagnostics.configure(diagnostics::consent_enabled());
     let executable = std::env::current_exe().expect("worker executable");
     let adapter = executable.parent().unwrap().join("../Resources/adapter.sh");
     let epoch = Arc::new(AtomicU64::new(0));
@@ -785,6 +795,12 @@ fn main() {
             let parsed: Result<Value, _> = serde_json::from_slice(&line);
             match parsed {
                 Ok(v) => {
+                    #[cfg(feature = "diagnostics")]
+                    if v["version"] == 1 && v["op"] == "diagnostics" {
+                        if let Some(enabled) = v["enabled"].as_bool() {
+                            diagnostics::consent(enabled);
+                        }
+                    }
                     if v["op"] == "cancel" {
                         reader_epoch.fetch_add(1, Ordering::Relaxed);
                     }
@@ -799,6 +815,14 @@ fn main() {
     });
     let mut session = Session::new();
     for (v, expected) in recv {
+        #[cfg(feature = "diagnostics")]
+        if v["version"] == 1 && v["op"] == "diagnostics" {
+            if v["enabled"].is_boolean() {
+                diagnostics.configure(diagnostics::consent_enabled());
+                emit(&v["id"], "done", json!({}));
+                continue;
+            }
+        }
         if let Err(message) = session.handle(&v, &adapter, &epoch, expected) {
             session.plan.clear();
             session.token.clear();

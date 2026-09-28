@@ -53,6 +53,7 @@ import Foundation
             .appendingPathComponent("build/BurrowBolt.app/Contents/MacOS/burrowbolt-worker")
         let native = CleanupWorker(executableURL: bundled)
         check(try await native.request(["op": "cancel"]).isEmpty, "Bundled worker cancellation contract changed")
+        check(try await native.request(["op": "diagnostics", "enabled": false]).isEmpty, "Worker refused opt-out")
         do {
             _ = try await native.request(["op": "unsupported-fixture-operation"])
             fatalError("Unknown worker operation was accepted")

@@ -17,7 +17,7 @@ scripts/validate.sh
 scripts/package-development.sh
 ```
 
-The build downloads and verifies Sparkle 2.10.0, stages Mole with strictly applied patches, embeds the worker and all runtime resources, and signs locally with an ad-hoc identity. The resulting app does not require Homebrew, Python, Rust, Go, Mole, or an AI agent on the destination Mac. Developer tools used by optional cleanup rules remain optional.
+The build downloads and verifies Sparkle 2.10.0 and Sentry Cocoa 9.29.2, stages Mole with strictly applied patches, embeds the worker and all runtime resources, and signs locally with an ad-hoc identity. The resulting app does not require Homebrew, Python, Rust, Go, Mole, or an AI agent on the destination Mac. Developer tools used by optional cleanup rules remain optional.
 
 A development DMG is written to `dist/development/BurrowBolt.dmg`; it is **not notarized**. Public release builds require Developer ID, notarization, and update-signing credentials. [Release instructions](docs/RELEASING.md).
 
@@ -31,7 +31,7 @@ Cleanup rechecks the current candidate and its file identities through Mole’s 
 
 Settings belong to `com.masonjames.burrowbolt`. Mole configuration, logs and cache are redirected only in the app’s staged copy, under BurrowBolt’s directories. Existing Mole settings and `HOME` are unchanged.
 
-No usage analytics or automatic crash reporting is included. Logs stay local; matching crash symbols ship as a separate build artifact. [Diagnostics and telemetry](docs/DIAGNOSTICS.md).
+Crash and error reporting through Sentry is opt-in under **BurrowBolt → Settings**. Routine macOS unified logs stay local; scanned paths, file names and AI prompts are excluded from reports. Matching crash symbols ship as a separate build artifact. No product analytics is included. [Diagnostics and telemetry](docs/DIAGNOSTICS.md).
 
 ## Maintaining the fork
 

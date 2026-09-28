@@ -32,5 +32,14 @@
     "url": "https://github.com/bats-core/bats-core/archive/refs/tags/v1.14.0.tar.gz",
     "sha256": "bb537b70b15b732f6d8827dd6578e3d8ce166636ce1f18ea9a074184fcce9177"
   },
-  "performance_baseline": "699fd919d58cbb6b33055d5404890071c6b9c070"
+  "performance_baseline": "699fd919d58cbb6b33055d5404890071c6b9c070",
+  "sentry": {
+    "version": "9.29.2",
+    "url": "https://github.com/getsentry/sentry-cocoa/releases/download/9.29.2/Sentry-Dynamic.xcframework.zip",
+    "sha256": "2a4c9e902c9f8fe97561669f7f6282ac23c64b6bf4c0500aee22948e4a8c8daa",
+    "source": {
+      "url": "https://github.com/getsentry/sentry-cocoa/archive/refs/tags/9.29.2.tar.gz",
+      "sha256": "5d46619ef288a8842787bdcfbd3f4b73bfb1f553458d6d6b7a21a2481daa1057"
+    }
+  }
 }

@@ -326,6 +326,7 @@ final class ScanModel {
         hovered = nil
         files = 0; dirs = 0; bytes = 0; elapsed = 0
         lastPollAt = nil; maxPollGap = 0
+        Diagnostics.log.info("Scan started")
         scanning = true
         startedAt = Date()
         endScanActivity()
@@ -402,6 +403,8 @@ final class ScanModel {
             }
             NSLog("BZ done at %.3f, longest gap between polls %.1f ms", doneAt.timeIntervalSinceReferenceDate, maxPollGap * 1000)
         }
+        Diagnostics.log.info("Scan finished; seconds: \(self.elapsed, privacy: .public); incomplete: \(result?.errors ?? 0, privacy: .public)")
+        if result == nil { Diagnostics.report(.scanFailed) }
         scanning = false
         updateVolumeSpace(space)
         if result == nil { endScanActivity() }
@@ -415,6 +418,7 @@ final class ScanModel {
     /// Enrichment and the one automatic AI run start only after a map is ready.
     func didRender(_ tree: Tree) {
         guard self.tree === tree, renderedTree != ObjectIdentifier(tree) else { return }
+        Diagnostics.log.info("First map ready")
         renderedTree = ObjectIdentifier(tree)
         endScanActivity()
             discoveryTask = Task {

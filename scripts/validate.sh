@@ -19,10 +19,11 @@ for name,source in [('BurrowBolt','Worker.swift'),('burrowbolt-worker','burrowbo
     assert source in lines, 'Crash symbols lack source lines for '+name
 print('PASS: matching app/worker crash UUIDs and source line tables')
 SYMBOLS
-cargo test --locked --release --features cli
+cargo test --locked --release --features cli,diagnostics
 cargo build --locked --release --features cli --bin blitztree --bin bench
 python3 tests/test_cli.py
 python3 tests/test_mole_adapter.py
+benchmarks/run-diagnostics.sh
 benchmarks/run-ui.sh --check-only
 benchmarks/run-ui.sh --insights
 benchmarks/run-ui.sh --worker

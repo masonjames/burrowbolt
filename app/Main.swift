@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct BurrowBoltApp: App {
     init() {
+        Diagnostics.start()
         _ = AppUpdater.shared
         // `BurrowBolt /some/path` is a scan target, not a document to open.
         // Left to AppKit, the path becomes an open-file request and SwiftUI
@@ -21,5 +22,6 @@ struct BurrowBoltApp: App {
                 Button("Check for Updates…") { AppUpdater.shared.check() }
             }
         }
+        Settings { DiagnosticsSettings() }
     }
 }

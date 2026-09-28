@@ -27,6 +27,8 @@ fi
 xcrun notarytool history --keychain-profile "$BURROWBOLT_NOTARY_PROFILE" >/dev/null
 export BURROWBOLT_RELEASE=1
 ./build.sh
+# Uploaded symbols must match the app produced by this build. No source files or user data.
+sentry-cli debug-files upload --org mason-james-llc --project borrowbolt --wait build/symbols
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 out="dist/$TAG"
@@ -46,18 +48,7 @@ xcrun notarytool submit "$out/BurrowBolt.dmg" --keychain-profile "$BURROWBOLT_NO
 xcrun stapler staple "$out/BurrowBolt.dmg"
 xcrun stapler validate "$out/BurrowBolt.dmg"
 spctl --assess --type open --context context:primary-signature -v "$out/BurrowBolt.dmg"
-# Corresponding source includes the pristine subtree, integration patches and locked Rust sources.
-mkdir -p "$stage/source/.cargo"
-git archive HEAD | tar -x -C "$stage/source"
-cargo vendor --locked "$stage/source/vendor/rust" > "$stage/source/.cargo/config.toml"
-# Cargo prints an absolute destination; make the published source archive relocatable.
-python3 - "$stage/source/.cargo/config.toml" <<'PY'
-from pathlib import Path
-import sys
-p=Path(sys.argv[1]);s=p.read_text();s='\n'.join('directory = "vendor/rust"' if l.startswith('directory = ') else l for l in s.splitlines())+'\n';p.write_text(s)
-PY
-python3 scripts/bundle-sparkle-source.py "$stage/source/vendor/sparkle"
-tar -czf "$stage/BurrowBolt-source.tar.gz" -C "$stage/source" .
+scripts/package-source.sh "$stage/BurrowBolt-source.tar.gz"
 cp "$NOTES" "$out/BurrowBolt.md"
 SPARKLE=$(python3 scripts/fetch-sparkle.py)
 "$SPARKLE/bin/generate_appcast" --account burrowbolt --maximum-deltas 0 --embed-release-notes \

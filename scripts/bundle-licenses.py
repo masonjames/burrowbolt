@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import json, pathlib, shutil, subprocess, sys
 out=pathlib.Path(sys.argv[1])
-metadata=json.loads(subprocess.check_output(['cargo','metadata','--locked','--all-features','--format-version','1']))
+metadata=json.loads(subprocess.check_output(['cargo','metadata','--locked','--all-features','--filter-platform','aarch64-apple-darwin','--format-version','1']))
+resolved = {node['id'] for node in metadata['resolve']['nodes']}
 for package in metadata['packages']:
-    if package['source'] is None: continue
+    if package['source'] is None or package['id'] not in resolved: continue
     root=pathlib.Path(package['manifest_path']).parent
     destination=out/(package['name']+'-'+package['version'])
     destination.mkdir(parents=True,exist_ok=True)

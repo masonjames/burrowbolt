@@ -117,7 +117,8 @@ if args.real:
     app = [str(f) for f in sorted((ROOT / "app").glob("*.swift"))
            if f.name not in ("Main.swift", "Treemap.swift", "TreemapView.swift")]
     sparkle=subprocess.check_output(["python3","scripts/fetch-sparkle.py"],cwd=ROOT,text=True).strip()
-    extra = [*app,"-F",sparkle,"-framework","Sparkle","-Xlinker","-rpath","-Xlinker",sparkle, "-import-objc-header", str(ROOT / "app" / "bz.h"),
+    sentry=subprocess.check_output(['python3','scripts/fetch-sentry.py'],cwd=ROOT,text=True).strip()
+    extra = [*app,"-F",sentry,"-framework","Sentry","-Xlinker","-rpath","-Xlinker",sentry,"-F",sparkle,"-framework","Sparkle","-Xlinker","-rpath","-Xlinker",sparkle, "-import-objc-header", str(ROOT / "app" / "bz.h"),
              "-L", str(ROOT / "target" / "release"), "-lblitztree"]
 else:
     extra = []

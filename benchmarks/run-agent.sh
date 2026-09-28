@@ -37,13 +37,14 @@ p.write_text(source.replace(old, new))
 PY
 clang -O2 -mmacosx-version-min=14.0 -c benchmarks/ui_fixture.c -o "$AGENT_BENCH_TMP/fixture.o"
 SPARKLE=$(python3 scripts/fetch-sparkle.py)
-swiftc "$AGENT_BENCH_TMP"/app/Worker.swift "$AGENT_BENCH_TMP"/app/Insights.swift "$AGENT_BENCH_TMP"/app/Updater.swift "$AGENT_BENCH_TMP"/app/Agent.swift "$AGENT_BENCH_TMP"/app/Cleanup.swift \
+SENTRY=$(python3 scripts/fetch-sentry.py)
+swiftc "$AGENT_BENCH_TMP/app/Diagnostics.swift" "$AGENT_BENCH_TMP"/app/Worker.swift "$AGENT_BENCH_TMP"/app/Insights.swift "$AGENT_BENCH_TMP"/app/Updater.swift "$AGENT_BENCH_TMP"/app/Agent.swift "$AGENT_BENCH_TMP"/app/Cleanup.swift \
   "$AGENT_BENCH_TMP"/app/ContentView.swift "$AGENT_BENCH_TMP"/app/Model.swift \
   "$AGENT_BENCH_TMP"/app/Treemap.swift "$AGENT_BENCH_TMP"/app/TreemapView.swift "$AGENT_BENCH_TMP"/app/SunburstView.swift \
   benchmarks/AgentReference.swift benchmarks/AgentPerformance.swift "$AGENT_BENCH_TMP/fixture.o" \
   -import-objc-header benchmarks/ui_fixture.h \
   -O -parse-as-library -swift-version 6 -default-isolation MainActor \
   -target arm64-apple-macos14.0 -framework AppKit -framework SwiftUI \
-  -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker "$SPARKLE" \
+  -F "$SENTRY" -framework Sentry -Xlinker -rpath -Xlinker "$SENTRY" -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker "$SPARKLE" \
   -o "$AGENT_BENCH_TMP/agent-bench"
 "$AGENT_BENCH_TMP/agent-bench" "$@"
