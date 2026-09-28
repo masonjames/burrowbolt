@@ -339,7 +339,10 @@ final class ScanModel {
         // the main thread never waits synchronously on that service.
         let volumePath = scanRoot
         volumeTask = Task.detached(priority: .userInitiated) { VolumeSpace.read(volumePath) }
-        handle = bz_scan_start(scanRoot)
+        // Completion must not wait for the next progress frame. The callback
+        // owns this retain until it queues the model back onto the main thread.
+        handle = bz_scan_start_notifying(scanRoot, scanCompleted,
+            Unmanaged.passRetained(self).toOpaque())
 
         // 60 Hz: the elapsed time ticks every frame, so the screen keeps
         // moving while the engine assembles the tree after the last file is
@@ -355,7 +358,7 @@ final class ScanModel {
     private var lastPollAt: Date?
     private var maxPollGap: Double = 0
 
-    private func poll() {
+    fileprivate func poll() {
         guard let handle else {
             // A slow volume-space service must not freeze progress while the
             // already finished tree waits for its matching volume snapshot.
@@ -509,6 +512,13 @@ final class ScanModel {
             unscannedBytes = used - tree.alloc[0]
         }
     }
+}
+
+// C invokes this on the Rust thread; never inherit MainActor isolation here.
+nonisolated private func scanCompleted(_ context: UnsafeMutableRawPointer?) {
+    guard let context else { return }
+    let model = Unmanaged<ScanModel>.fromOpaque(context).takeRetainedValue()
+    DispatchQueue.main.async { model.poll() }
 }
 
 nonisolated private struct VolumeSpace: Sendable {

@@ -8,6 +8,9 @@
 typedef struct BzScan BzScan;
 
 BzScan *bz_scan_start(const char *path);
+// One scan-thread callback after publication, even if the handle was cancelled/freed.
+// Keep context alive until the callback; dispatch UI work onto the main thread.
+BzScan *bz_scan_start_notifying(const char *path, void (*notify)(void *), void *context);
 void bz_cancel(BzScan *h);
 void bz_progress(BzScan *h, uint64_t *files, uint64_t *dirs, uint64_t *bytes, int *done);
 uint64_t bz_take_tree(BzScan *h);

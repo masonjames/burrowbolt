@@ -40,6 +40,9 @@ BzScan *bz_fixture_create(uint32_t n, const uint32_t *parents,
 void bz_cancel(BzScan *h) { (void)h; }
 const bool *bz_complete(BzScan *h) { return h->complete; }
 BzScan *bz_scan_start(const char *path) { (void)path; abort(); }
+BzScan *bz_scan_start_notifying(const char *path, void (*notify)(void *), void *context) {
+    (void)notify; (void)context; return bz_scan_start(path);
+}
 void bz_progress(BzScan *h, uint64_t *f, uint64_t *d, uint64_t *b, int *done) {
     (void)h; *f = 0; *d = 0; *b = 0; *done = 1;
 }
