@@ -22,8 +22,9 @@ import Foundation
             longestGap = max(longestGap,now-last);last=now
             if now-started > 120 { fputs("First map timed out\n",stderr); exit(1) }
         }
+        precondition(model.activity == nil, "Scan activity outlived the first completed map")
         let record: [String:Any] = ["seconds":ProcessInfo.processInfo.systemUptime-started,
-            "max_main_loop_gap_ms":longestGap*1000,"nodes":model.tree!.count,
+            "scan_seconds":model.elapsed, "max_main_loop_gap_ms":longestGap*1000,"nodes":model.tree!.count,
             "bytes":model.tree!.alloc[0],"scale":window.backingScaleFactor]
         print(String(data:try! JSONSerialization.data(withJSONObject:record,options:.sortedKeys),encoding:.utf8)!)
         #if BURROWBOLT_BENCHMARK

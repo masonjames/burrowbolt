@@ -4,6 +4,7 @@ import csv,json,pathlib,subprocess,tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 baseline=json.loads((ROOT/'UPSTREAMS.lock').read_text())['performance_baseline']
 def run(*args): subprocess.run(args,cwd=ROOT,check=True)
+# Short fixtures are sensitive to hosted scheduling jitter; retain 21 AB/BA pairs.
 with tempfile.TemporaryDirectory(prefix='burrowbolt-performance-') as folder:
     path=pathlib.Path(folder)
     wide=path/'wide';wide.mkdir()
@@ -11,11 +12,11 @@ with tempfile.TemporaryDirectory(prefix='burrowbolt-performance-') as folder:
     deep=path
     for i in range(200):
         deep=deep/'d';deep.mkdir();(deep/'file').write_bytes(b'fixture')
-    run('python3','benchmarks/first-map.py','--baseline',baseline,'--path',folder,'--runs','7')
+    run('python3','benchmarks/first-map.py','--baseline',baseline,'--path',folder,'--runs','21')
     old=ROOT/'build/perf-baseline-source'
     subprocess.run(['cargo','build','--locked','--release','--features','cli','--bin','bench'],cwd=old,check=True)
     run('python3','benchmarks/scan.py','--baseline',str(old/'target/release/bench'),
-        '--candidate','target/release/bench','--path',folder,'--runs','9','--output','build/perf-results/ci.json')
+        '--candidate','target/release/bench','--path',folder,'--runs','21','--output','build/perf-results/ci.json')
 render=subprocess.check_output(['python3','benchmarks/rendering.py','--baseline',baseline],cwd=ROOT,text=True)
 (ROOT/'build/performance-rendering.txt').write_text(render);print(render)
 scan=json.loads((ROOT/'build/perf-results/ci.json').read_text())['summary']

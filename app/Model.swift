@@ -328,7 +328,8 @@ final class ScanModel {
         lastPollAt = nil; maxPollGap = 0
         scanning = true
         startedAt = Date()
-        // Keep the process out of App Nap / timer coalescing while scanning.
+        endScanActivity()
+        // Keep the process out of App Nap / timer coalescing through first-map delivery.
         activity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiated, .latencyCritical],
             reason: "Disk scan"
@@ -400,6 +401,10 @@ final class ScanModel {
         }
         scanning = false
         updateVolumeSpace(space)
+        if result == nil { endScanActivity() }
+    }
+
+    private func endScanActivity() {
         if let activity { ProcessInfo.processInfo.endActivity(activity) }
         activity = nil
     }
@@ -408,6 +413,7 @@ final class ScanModel {
     func didRender(_ tree: Tree) {
         guard self.tree === tree, renderedTree != ObjectIdentifier(tree) else { return }
         renderedTree = ObjectIdentifier(tree)
+        endScanActivity()
             discoveryTask = Task {
                 let job = Task.detached(priority: .utility) { DiskInsights.find(in: tree) }
                 let found = await withTaskCancellationHandler { await job.value } onCancel: { job.cancel() }
