@@ -32,7 +32,9 @@ swiftc app/*.swift -import-objc-header app/bz.h \
     -target arm64-apple-macos$MIN_MACOS -L target/release -lblitztree \
     -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -framework AppKit -framework SwiftUI -o "$APP/Contents/MacOS/BurrowBolt"
-export BURROWBOLT_SOURCE_COMMIT=$(git rev-parse HEAD)
+# Corresponding-source archives intentionally have no .git directory.
+export BURROWBOLT_SOURCE_COMMIT=source-archive
+if [[ -e .git ]]; then BURROWBOLT_SOURCE_COMMIT=$(git rev-parse HEAD); fi
 python3 - "$APP" "$VERSION" <<'PY'
 import os, pathlib, plistlib, sys
 app, version = pathlib.Path(sys.argv[1]), sys.argv[2]
