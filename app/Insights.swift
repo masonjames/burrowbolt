@@ -151,6 +151,7 @@ struct InventoryResults: View {
 
 struct FindingInspector: View {
     let model: ScanModel
+    @State private var inspecting = false
     var body: some View {
         if let tree = model.tree, let node = model.selection {
             VStack(alignment:.leading,spacing:6) {
@@ -161,6 +162,12 @@ struct FindingInspector: View {
                 if let candidate = model.cleanup.first(where: { $0.node == node }) {
                     Text(candidate.kind).font(.callout)
                     if let reason = candidate.blockingReason { Text(reason).font(.caption).foregroundStyle(.secondary) }
+                    if candidate.category == "installer-zip", !candidate.canReview, candidate.complete {
+                        Button(inspecting ? "Inspecting…" : "Inspect archive") {
+                            inspecting = true
+                            Task { await model.inspectArchive(candidate); inspecting = false }
+                        }.disabled(inspecting || model.scanning || CleanupCoordinator.shared.running)
+                    }
                     if candidate.canReview { Text("Review before cleanup. Trash is recoverable until permanently emptied.").font(.caption) }
                 }
             }.padding(12)

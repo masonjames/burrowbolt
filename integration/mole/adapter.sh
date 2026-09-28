@@ -111,14 +111,14 @@ case "$kind" in
                 ;;
             *) exit 31 ;;
         esac
-        # A mounted/open installer must remain in place. Unknown process state refuses.
-        open_status=0
-        open_errors=$(create_temp_file)
-        run_with_timeout 3 /usr/sbin/lsof -t -- "$path" >/dev/null 2>"$open_errors" || open_status=$?
-        [[ $open_status -eq 1 && ! -s "$open_errors" ]] || exit 35
         ;;
     *) exit 32 ;; # New rule families require their own evidence and tests.
 esac
+# Reuse Mole's complete-process-visibility and recursive handle predicate for
+# selected native targets too. An unprivileged partial lsof view is unknown.
+open_status=0
+_mole_container_cache_has_open_handle "$_BB_SELECTED_PATH" || open_status=$?
+[[ $open_status -eq 1 ]] || exit 35
 # Reuse upstream's common live-cache and database guards. This has no removal sink.
 # Replace only the output boundary; record_dry_run_cleanup_target still runs its checks.
 append_dry_run_cleanup_target() { return 0; }

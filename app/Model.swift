@@ -459,20 +459,36 @@ final class ScanModel {
                         }
                     }
                 }
+                let archiveDeadline = ContinuousClock.now.advanced(by:.seconds(20))
+                var deferredArchives = 0
                 for archive in cleanup.filter({ $0.category == "installer-zip" && $0.complete && !$0.generation.isEmpty }) {
                     guard self.tree === tree, !Task.isCancelled else { return }
                     while CleanupCoordinator.shared.running {
                         try? await Task.sleep(for:.milliseconds(50))
                         if Task.isCancelled { return }
                     }
+                    if ContinuousClock.now >= archiveDeadline { deferredArchives += 1; continue }
                     enrichmentStatus = "Inspecting installer archives"
                     if let item = try? await CleanupCoordinator.shared.inspectArchive(archive),
                        self.tree === tree, !Task.isCancelled,
                        let index = cleanup.firstIndex(where: { $0.node == item.node }) { cleanup[index] = item }
                 }
+                if deferredArchives > 0 { enrichmentFailures.append("\(deferredArchives) archive listings deferred; select an archive to inspect it") }
                 enrichmentStatus = enrichmentFailures.isEmpty ? "Checks finished; protected or uncertain targets may be withheld" : "Discovery partial: \(enrichmentFailures.count) probes unavailable"
             }
             NSLog("BZ scan done: %llu nodes, %llu unreadable dirs", UInt64(tree.count), tree.errors)
+    }
+
+    func inspectArchive(_ archive: CleanupItem) async {
+        guard let tree, !scanning, !CleanupCoordinator.shared.running else { return }
+        do {
+            let checked = try await CleanupCoordinator.shared.inspectArchive(archive)
+            guard self.tree === tree, let index = cleanup.firstIndex(where:{ $0.node == archive.node }) else { return }
+            cleanup[index] = checked
+        } catch {
+            guard self.tree === tree, let index = cleanup.firstIndex(where:{ $0.node == archive.node }) else { return }
+            cleanup[index].blockingReason = error.localizedDescription
+        }
     }
 
     func cancelScan() {

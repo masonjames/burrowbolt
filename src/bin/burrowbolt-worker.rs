@@ -520,7 +520,8 @@ impl Session {
                 let key = field(v, "candidateID")?;
                 let candidate = self
                     .archives
-                    .remove(key)
+                    .get(key)
+                    .cloned()
                     .ok_or("No pending archive with this identity")?;
                 let mut inspection = candidate.clone();
                 inspection.kind = "inspect-zip".into();

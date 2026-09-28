@@ -20,7 +20,7 @@ import datetime,json,os,pathlib,subprocess
 head=subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()
 dirty=subprocess.check_output(["git","status","--porcelain"],text=True).strip()
 assert head==os.environ["BURROWBOLT_VALIDATION_HEAD"], "HEAD changed during validation; rerun on the final commit"
-assert dirty==os.environ["BURROWBOLT_VALIDATION_DIRTY"], "Worktree changed during validation; rerun on the final source"
+assert dirty==os.environ["BURROWBOLT_VALIDATION_DIRTY"].strip(), "Worktree changed during validation; rerun on the final source"
 pathlib.Path('build/validation.json').write_text(json.dumps({
  'commit':head,
  'dirty':bool(dirty),

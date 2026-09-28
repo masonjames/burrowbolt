@@ -11,7 +11,14 @@ class AdapterTests(unittest.TestCase):
         self.second=self.home/'Library/Logs/FixtureTwo'
         for path in (self.first,self.second):
             path.mkdir(parents=True); (path/'log.txt').write_bytes(b'fixture\n'*1024)
-        self.env={**os.environ,'HOME':str(self.home),'TMPDIR':str(self.home), 'MOLE_TEST_NO_AUTH':'1'}
+        # Root-process visibility is not granted on every developer Mac. Supply
+        # only that evidence in isolated fixtures; target-handle queries stay real.
+        self.bin=self.home/'bin';self.bin.mkdir()
+        self.lsof=self.bin/'lsof'
+        self.lsof.write_text('#!/bin/bash\nif [[ "$*" == "-F pu -p 1" ]]; then printf "p1\\nu0\\n"; else exec /usr/sbin/lsof "$@"; fi\n')
+        self.lsof.chmod(0o700)
+        self.env={**os.environ,'HOME':str(self.home),'TMPDIR':str(self.home), 'MOLE_TEST_NO_AUTH':'1',
+                  'PATH':str(self.bin)+':/usr/bin:/bin:/usr/sbin:/sbin'}
     def tearDown(self): self.temp.cleanup()
     def run_adapter(self,path,mode,expect_grant=False):
         process=subprocess.Popen(['/bin/bash',str(ADAPTER),str(path),mode,str(self.home)],
@@ -63,6 +70,20 @@ class AdapterTests(unittest.TestCase):
         with path.open('rb') as active:
             self.assertNotIn(b'allowed',self.run_adapter(path,'installer'))
             self.assertEqual(active.read(),b'fixture')
+    def test_uncertain_process_visibility_refuses_installer(self):
+        path=self.home/'Closed.dmg';path.write_bytes(b'fixture')
+        self.lsof.write_text('#!/bin/bash\nexit 1\n')
+        self.assertNotIn(b'allowed',self.run_adapter(path,'installer'))
+        self.assertEqual(self.last_returncode,35)
+    def test_old_project_artifact_rechecks_open_handles(self):
+        project=self.home/'projects/example';artifact=project/'node_modules'
+        artifact.mkdir(parents=True);(project/'package.json').write_text('{}')
+        file=artifact/'fixture.js';file.write_bytes(b'fixture')
+        old=time.time()-10*86400
+        for path in (file,artifact):os.utime(path,(old,old))
+        self.assertEqual(self.run_adapter(artifact,'project'),b'allowed\n')
+        with file.open('rb'):
+            self.assertNotIn(b'allowed',self.run_adapter(artifact,'project'))
     def test_nonrequired_family_status_and_reset_deadline_match_mole_caller(self):
         for family in ('clean_app_caches','run_cloud_and_office_cleanup','clean_user_gui_applications'):
             self.run_adapter('/', 'discover:'+family)

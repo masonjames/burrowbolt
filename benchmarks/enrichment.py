@@ -23,7 +23,10 @@ with out.open('w') as log:
             owned|=children
         samples.append({'seconds':time.monotonic()-started,'processes':len(owned),'rss_bytes':sum(rss*1024 for pid,parent,rss in rows if pid in owned)})
         if time.monotonic()-started>390:
-            process.terminate();raise SystemExit('Profile timed out')
+            process.terminate()
+            try: process.wait(timeout=5)
+            except subprocess.TimeoutExpired: process.kill();process.wait()
+            break
         time.sleep(.2)
     status=process.returncode
 report={'scope':'sampled sum of resident memory for app plus worker/probe descendants; shared pages may be counted more than once',

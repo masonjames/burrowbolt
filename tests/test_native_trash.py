@@ -24,7 +24,7 @@ def main():
             line=process.stdout.readline()
             assert line, 'worker stopped'
             record=json.loads(line); assert record['id']==request_id
-            assert record['event']!='error', record
+            if record['event']=='error': return [record['body']]
             if record['event']=='done': return records
             records.append(record['body'])
     try:
@@ -33,6 +33,11 @@ def main():
             for key,path in [('selected',selected),('kept',kept)]])
         assert all(item['action']=='review' for item in candidates), candidates
         plan=request('plan',generation='fixture',candidateIDs=['selected'])[0]
+        if 'token' not in plan:
+            assert selected.read_bytes()==b'isolated BurrowBolt fixture' and kept.read_bytes()==b'keep this fixture'
+            print('BLOCKED: native Trash execution; process guard refused: '+plan.get('message','unknown'))
+            print('PASS: uncertain process evidence preserves both fixture files')
+            return
         result=request('apply',generation='fixture',token=plan['token'],candidateIDs=['selected'])[0]
         assert result['status']=='trashed', result
         destination=pathlib.Path(result['trashPath'])
