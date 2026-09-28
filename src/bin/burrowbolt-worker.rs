@@ -55,6 +55,15 @@ struct Candidate {
     kind: String,
 }
 
+/// The scanner can expose the writable volume through its mount-point alias.
+/// Normalize candidates, scan roots and exclusions identically before containment checks.
+fn inventory_path(path: &Path) -> PathBuf {
+    match path.strip_prefix("/System/Volumes/Data") {
+        Ok(relative) => Path::new("/").join(relative),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
 /// Bind every ancestor as well as the target: replacing an ancestor with a
 /// symlink cannot redirect a later move outside the approved containment root.
 fn snapshot(
@@ -219,16 +228,25 @@ fn guard(
                 }
                 return Err("Mole did not produce an exact-item grant".into());
             }
-            Some(s) => {
-                return Err(format!(
-                    "Mole refused this action (guard {}); it remains informational",
-                    s.code().unwrap_or(-1)
-                ))
-            }
+            Some(s) => return Err(guard_refusal(s.code())),
             None => std::thread::sleep(Duration::from_millis(10)),
         }
     }
     same(&candidate.lineage)
+}
+
+fn guard_refusal(code: Option<i32>) -> String {
+    match code {
+        Some(20) => "This item is not owned by you or is a symbolic link",
+        Some(21..=23 | 28 | 33) => "Mole protects this location or its contents; review it in Finder",
+        Some(24..=27) => "This folder is not a validated disposable project artifact",
+        Some(29) => "This project artifact changed recently, or its activity could not be verified",
+        Some(30 | 31) => "This file is not a supported installer",
+        Some(35) => "This item is in use; close the application using it before trying again",
+        Some(36) => "macOS did not provide a complete process view. BurrowBolt cannot prove this item is idle; use Finder to review it",
+        Some(124 | 130 | 143) => "The safety check timed out or was cancelled; nothing was removed",
+        _ => return format!("Mole refused this action (guard {}); nothing was removed", code.unwrap_or(-1)),
+    }.into()
 }
 
 fn discover_family(
@@ -437,8 +455,11 @@ impl Session {
                 } else {
                     self.generation = field(v, "generation")?.into();
                     self.epoch = expected;
-                    self.root = fs::canonicalize(field(v, "root")?).map_err(|e| e.to_string())?;
-                    self.home = fs::canonicalize(&self.home).map_err(|e| e.to_string())?;
+                    self.root = inventory_path(
+                        &fs::canonicalize(field(v, "root")?).map_err(|e| e.to_string())?,
+                    );
+                    self.home =
+                        inventory_path(&fs::canonicalize(&self.home).map_err(|e| e.to_string())?);
                     self.candidates.clear();
                     self.archives.clear();
                     self.discovered.clear();
@@ -450,7 +471,7 @@ impl Session {
                         .map(|a| {
                             a.iter()
                                 .filter_map(Value::as_str)
-                                .map(PathBuf::from)
+                                .map(|path| inventory_path(Path::new(path)))
                                 .collect()
                         })
                         .unwrap_or_default();
@@ -467,18 +488,7 @@ impl Session {
                     if !self.seen.insert(key.clone()) {
                         return Err("Duplicate candidate ID".into());
                     }
-                    let original = PathBuf::from(field(item, "path")?);
-                    // Data-volume firmlinks are an inventory alias, not arbitrary symlinks.
-                    let path = if let Ok(relative) = original.strip_prefix("/System/Volumes/Data") {
-                        Path::new("/").join(relative)
-                    } else {
-                        original
-                    };
-                    let path_root = if self.root == Path::new("/System/Volumes/Data") {
-                        Path::new("/")
-                    } else {
-                        &self.root
-                    };
+                    let path = inventory_path(Path::new(field(item, "path")?));
                     let kind = field(item, "category")?.to_owned();
                     let mut result = item.clone();
                     let outcome = if item["complete"] != true {
@@ -486,7 +496,7 @@ impl Session {
                     } else if !matches!(kind.as_str(), "project" | "installer" | "installer-zip") {
                         Err("Informational: requires a separately supported owner-specific cleanup rule".into())
                     } else {
-                        snapshot(&path, &self.home, path_root, &self.exclusions)
+                        snapshot(&path, &self.home, &self.root, &self.exclusions)
                     };
                     match outcome {
                         Ok(lineage) => {
@@ -576,18 +586,12 @@ impl Session {
                     if item["complete"] != true || item["category"].as_str() != Some(&kind) {
                         continue;
                     }
-                    let root = if self.root == Path::new("/System/Volumes/Data") {
-                        Path::new("/")
-                    } else {
-                        &self.root
-                    };
-                    if let Ok(lineage) =
-                        snapshot(Path::new(path), &self.home, root, &self.exclusions)
-                    {
+                    let path = inventory_path(Path::new(path));
+                    if let Ok(lineage) = snapshot(&path, &self.home, &self.root, &self.exclusions) {
                         self.candidates.insert(
                             key.clone(),
                             Candidate {
-                                path: PathBuf::from(path),
+                                path,
                                 lineage,
                                 kind,
                             },
@@ -839,6 +843,32 @@ mod tests {
         assert!(snapshot(&path, &home, &home, &[]).is_err());
         fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn data_volume_alias_cannot_bypass_exclusions() {
+        let temp = ProbeTemp::new().unwrap();
+        let root = fs::canonicalize(&temp.0).unwrap();
+        let file = root.join("excluded.dmg");
+        fs::write(&file, b"keep").unwrap();
+        let alias = Path::new("/System/Volumes/Data").join(file.strip_prefix("/").unwrap());
+        assert_eq!(inventory_path(&alias), file);
+        assert_eq!(
+            inventory_path(Path::new("/System/Volumes/Database/test")),
+            Path::new("/System/Volumes/Database/test")
+        );
+        let mut session = Session::new();
+        session.home = root.clone();
+        for (candidate, excluded) in [(&file, &alias), (&alias, &file)] {
+            session.handle(&json!({"version":1,"op":"discover","root":root,
+                "generation":"exclusion","exclusions":[excluded],"items":[
+                    {"candidateID":"protected","path":candidate,"category":"installer","complete":true}
+                ]}), Path::new("/not-invoked"), &AtomicU64::new(0), 0).unwrap();
+            assert!(session.candidates.is_empty());
+            assert_eq!(fs::read(&file).unwrap(), b"keep");
+        }
+        assert!(guard_refusal(Some(35)).contains("in use"));
+        assert!(guard_refusal(Some(36)).contains("complete process view"));
+    }
+
     #[test]
     fn selected_apply_is_single_use_and_permanent_removal_requires_own_receipt() {
         let root =

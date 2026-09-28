@@ -13,5 +13,6 @@ if [[ -n ${BURROWBOLT_SIGN_IDENTITY:-} && "$BURROWBOLT_SIGN_IDENTITY" != - ]]; t
     codesign --timestamp --sign "$BURROWBOLT_SIGN_IDENTITY" dist/development/BurrowBolt.dmg
     codesign --verify --strict dist/development/BurrowBolt.dmg
 fi
-shasum -a 256 dist/development/BurrowBolt.dmg > dist/development/SHA256SUMS.txt
+tar -czf dist/development/BurrowBolt-symbols.tar.gz -C build/symbols .
+(cd dist/development && shasum -a 256 BurrowBolt.dmg BurrowBolt-symbols.tar.gz > SHA256SUMS.txt)
 print 'Development DMG: dist/development/BurrowBolt.dmg (not notarized; not a public release)'

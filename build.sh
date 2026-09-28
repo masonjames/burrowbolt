@@ -28,10 +28,11 @@ cp integration/mole/families.txt "$APP/Contents/Resources/"
 cp integration/mole/adapter.sh "$APP/Contents/Resources/"
 cp UPSTREAMS.lock "$APP/Contents/Resources/"
 swiftc app/*.swift -import-objc-header app/bz.h \
-    -O -parse-as-library -swift-version 6 -default-isolation MainActor \
+    -O -g -parse-as-library -swift-version 6 -default-isolation MainActor \
     -target arm64-apple-macos$MIN_MACOS -L target/release -lblitztree \
     -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -framework AppKit -framework SwiftUI -o "$APP/Contents/MacOS/BurrowBolt"
+export BURROWBOLT_SOURCE_COMMIT=$(git rev-parse HEAD)
 python3 - "$APP" "$VERSION" <<'PY'
 import os, pathlib, plistlib, sys
 app, version = pathlib.Path(sys.argv[1]), sys.argv[2]
@@ -43,7 +44,8 @@ info = dict(CFBundleName='BurrowBolt', CFBundleDisplayName='BurrowBolt',
     CFBundleIconFile='AppIcon', CFBundleIconName='AppIcon', NSHighResolutionCapable=True,
     NSHumanReadableCopyright='BurrowBolt contributors; BlitzTree and Mole contributors. GPLv3.',
     SUFeedURL='https://masonjames.github.io/burrowbolt/appcast.xml',
-    SUAutomaticallyUpdate=False, SUAllowsAutomaticUpdates=False,
+    SUAutomaticallyUpdate=False, SUAllowsAutomaticUpdates=False, SUEnableSystemProfiling=False,
+    BurrowBoltSourceCommit=os.environ["BURROWBOLT_SOURCE_COMMIT"],
     SURequireSignedFeed=True, SUVerifyUpdateBeforeExtraction=True,
     BurrowBoltDevelopmentBuild=os.environ.get('BURROWBOLT_RELEASE') != '1')
 key = os.environ.get('BURROWBOLT_SPARKLE_PUBLIC_KEY')
@@ -55,6 +57,16 @@ print -n 'APPL????' > "$APP/Contents/PkgInfo"
 xcrun actool "$PWD/assets/AppIcon.icon" --compile "$PWD/$APP/Contents/Resources" \
     --platform macosx --target-device mac --minimum-deployment-target $MIN_MACOS \
     --app-icon AppIcon --output-partial-info-plist "$PWD/build/icon-partial.plist" >/dev/null
+# Retain matching symbols outside the app: local crash reports and future Sentry
+# reports need these exact UUIDs. Debug sections do not ship in the installer.
+rm -rf build/symbols
+mkdir -p build/symbols
+# swiftc already runs dsymutil before deleting its temporary object files.
+mv "$APP/Contents/MacOS/BurrowBolt.dSYM" build/symbols/
+xcrun dsymutil "$APP/Contents/MacOS/burrowbolt-worker" -o build/symbols/burrowbolt-worker.dSYM
+for binary in BurrowBolt burrowbolt-worker; do
+    strip -S "$APP/Contents/MacOS/$binary"
+done
 SIGN_ARGS=(--force --sign "$IDENTITY")
 if [[ "$IDENTITY" != - ]]; then SIGN_ARGS+=(--options runtime --timestamp); fi
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"

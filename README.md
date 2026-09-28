@@ -31,6 +31,8 @@ Cleanup rechecks the current candidate and its file identities through Mole’s 
 
 Settings belong to `com.masonjames.burrowbolt`. Mole configuration, logs and cache are redirected only in the app’s staged copy, under BurrowBolt’s directories. Existing Mole settings and `HOME` are unchanged.
 
+No usage analytics or automatic crash reporting is included. Logs stay local; matching crash symbols ship as a separate build artifact. [Diagnostics and telemetry](docs/DIAGNOSTICS.md).
+
 ## Maintaining the fork
 
 BlitzTree’s source layout, Git history, and internal Rust crate name are retained to reduce merge conflicts. Mole is a pristine squashed subtree in `vendor/mole`; integration patches are outside it. [Maintenance and capability matrix](docs/MAINTENANCE.md).

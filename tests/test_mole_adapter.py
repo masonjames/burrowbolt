@@ -69,12 +69,13 @@ class AdapterTests(unittest.TestCase):
         path=self.home/'Open.dmg';path.write_bytes(b'fixture')
         with path.open('rb') as active:
             self.assertNotIn(b'allowed',self.run_adapter(path,'installer'))
+            self.assertEqual(self.last_returncode,35)
             self.assertEqual(active.read(),b'fixture')
     def test_uncertain_process_visibility_refuses_installer(self):
         path=self.home/'Closed.dmg';path.write_bytes(b'fixture')
         self.lsof.write_text('#!/bin/bash\nexit 1\n')
         self.assertNotIn(b'allowed',self.run_adapter(path,'installer'))
-        self.assertEqual(self.last_returncode,35)
+        self.assertEqual(self.last_returncode,36)
     def test_old_project_artifact_rechecks_open_handles(self):
         project=self.home/'projects/example';artifact=project/'node_modules'
         artifact.mkdir(parents=True);(project/'package.json').write_text('{}')

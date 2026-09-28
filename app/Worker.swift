@@ -1,98 +1,167 @@
 import AppKit
 import Observation
+import OSLog
 
 @MainActor final class CleanupWorker {
     private var process: Process?
     private var input: FileHandle?
+    private var session = UUID()
     private var nextID = 0
-    private var replies: [Int: (records: [Data], continuation: CheckedContinuation<[Data], Error>)] = [:]
+    private var replies: [Int: (records: [Data], bytes: Int, continuation: CheckedContinuation<[Data], Error>)] = [:]
     private let writes = DispatchQueue(label: "burrowbolt.worker.input")
+    private let executableURL: URL?
+    private static let log = Logger(subsystem: "com.masonjames.burrowbolt", category: "worker")
+
+    init(executableURL: URL? = nil) { self.executableURL = executableURL }
 
     func request(_ message: [String: Any]) async throws -> [[String: Any]] {
         if process == nil { try launch() }
         nextID += 1
-        let id = nextID
+        let id = nextID, current = session
         var message = message
-        message["version"] = 1; message["id"] = id
+        message["version"] = 1
+        message["id"] = id
         var data = try JSONSerialization.data(withJSONObject: message)
         data.append(10)
-        guard data.count <= 8 * 1024 * 1024, let input else { throw failure("Worker request is too large") }
+        guard data.count <= WorkerRecords.limit, let input else { throw failure("Worker request is too large") }
         let payload = data
         let records: [Data] = try await withCheckedThrowingContinuation { continuation in
-            replies[id] = ([], continuation)
+            replies[id] = ([], 0, continuation)
             writes.async { [weak self] in
                 do { try input.write(contentsOf: payload) }
-                catch { DispatchQueue.main.async { self?.failAll("Worker input closed") } }
+                catch {
+                    DispatchQueue.main.async {
+                        self?.failAll("Worker input closed; rescan before trying again", session: current)
+                    }
+                }
             }
         }
         return records.compactMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     }
 
-    func cancel() { guard process != nil else { return }; Task { _ = try? await request(["op": "cancel"]) } }
+    func cancel() {
+        guard process != nil else { return }
+        Task { _ = try? await request(["op": "cancel"]) }
+    }
 
     private func failure(_ message: String) -> NSError {
         NSError(domain: "BurrowBolt", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
+
     private func launch() throws {
-        guard let url = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("burrowbolt-worker") else {
+        guard let url = executableURL ?? Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("burrowbolt-worker") else {
             throw failure("Bundled worker is missing")
         }
         let process = Process(), stdout = Pipe(), stdin = Pipe()
         process.executableURL = url
-        process.standardInput = stdin; process.standardOutput = stdout
+        process.standardInput = stdin
+        process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
-        let decoder = WorkerRecords { [weak self] data in
-            DispatchQueue.main.async { self?.receive(data) }
-        }
-        stdout.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty { handle.readabilityHandler = nil } else { decoder.feed(data) }
-        }
-        process.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async { self?.failAll("Cleanup worker stopped; rescan before trying again") }
-        }
         try process.run()
-        self.process = process; input = stdin.fileHandleForWriting
+        self.process = process
+        input = stdin.fileHandleForWriting
+        session = UUID()
+        let current = session, output = stdout.fileHandleForReading
+        Self.log.info("Worker started")
+        // Drain stdout before reporting exit. A termination handler can otherwise
+        // discard the final successful Trash receipts still waiting in the pipe.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var decoder = WorkerRecords()
+            var failure = "Cleanup worker stopped; rescan before trying again"
+            defer {
+                try? output.close()
+                let message = failure
+                DispatchQueue.main.async { [weak self] in self?.failAll(message, session: current) }
+            }
+            do {
+                while let data = try output.read(upToCount: 64 * 1024), !data.isEmpty {
+                    let records = try decoder.feed(data)
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.session == current else { return }
+                        for record in records { self.receive(record) }
+                    }
+                }
+                try decoder.finish()
+            } catch {
+                failure = "Cleanup worker returned incomplete or oversized output; rescan before trying again"
+            }
+        }
     }
+
     private func receive(_ data: Data) {
         guard let record = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = record["id"] as? Int, var reply = replies.removeValue(forKey: id) else { return }
-        if record["event"] as? String == "error" {
-            if reply.records.contains(where: { data in
-                (try? JSONSerialization.jsonObject(with:data) as? [String: Any])?["event"] as? String == "result"
-            }) {
-                reply.records.append(data)
-                reply.continuation.resume(returning:reply.records)
-            } else {
-                reply.continuation.resume(throwing: failure((record["body"] as? [String: Any])?["message"] as? String ?? "Worker refused the request"))
-            }
-        } else if record["event"] as? String == "done" {
+              record["version"] as? Int == 1, let id = record["id"] as? Int,
+              let event = record["event"] as? String else {
+            failAll("Cleanup worker returned an invalid response; rescan before trying again", session: session)
+            return
+        }
+        guard var reply = replies.removeValue(forKey: id) else { return }
+        if event == "error" {
+            resolve(reply, error: data)
+        } else if event == "done" {
             reply.continuation.resume(returning: reply.records)
+        } else if reply.bytes + data.count > 64 * 1024 * 1024 {
+            replies[id] = reply
+            failAll("Cleanup worker response exceeded its limit; rescan before trying again", session: session)
         } else {
             reply.records.append(data)
+            reply.bytes += data.count
             replies[id] = reply
         }
     }
-    private func failAll(_ message: String) {
-        process = nil; input = nil
-        let pending = replies; replies = [:]
-        for reply in pending.values { reply.continuation.resume(throwing: failure(message)) }
+
+    private func resolve(_ reply: (records: [Data], bytes: Int, continuation: CheckedContinuation<[Data], Error>), error: Data) {
+        let hasResults = reply.records.contains { data in
+            (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["event"] as? String == "result"
+        }
+        if hasResults {
+            reply.continuation.resume(returning: reply.records + [error])
+        } else {
+            let record = try? JSONSerialization.jsonObject(with: error) as? [String: Any]
+            let message = (record?["body"] as? [String: Any])?["message"] as? String ?? "Worker refused the request"
+            reply.continuation.resume(throwing: failure(message))
+        }
+    }
+
+    private func failAll(_ message: String, session current: UUID) {
+        guard session == current else { return }
+        // EOF cancels the Rust worker's active probe and lets it reap its children.
+        try? input?.close()
+        process = nil
+        input = nil
+        session = UUID()
+        let pending = replies
+        replies = [:]
+        Self.log.error("Worker connection closed; pending requests: \(pending.count)")
+        for (id, reply) in pending {
+            let record: [String: Any] = ["version": 1, "id": id, "event": "error", "body": ["message": message]]
+            resolve(reply, error: try! JSONSerialization.data(withJSONObject: record))
+        }
     }
 }
 
-nonisolated private final class WorkerRecords: @unchecked Sendable {
-    private let lock = NSLock()
+/// Used on one reader queue. Bound incomplete records as well as complete lines.
+nonisolated struct WorkerRecords {
+    static let limit = 8 * 1024 * 1024
     private var buffer = Data()
-    private let emit: @Sendable (Data) -> Void
-    init(emit: @escaping @Sendable (Data) -> Void) { self.emit = emit }
-    func feed(_ data: Data) {
-        lock.lock(); defer { lock.unlock() }
+    enum Failure: Error { case oversized, incomplete }
+
+    mutating func feed(_ data: Data) throws -> [Data] {
         buffer.append(data)
+        var records: [Data] = []
         var start = buffer.startIndex
         while let end = buffer[start...].firstIndex(of: 10) {
-            emit(Data(buffer[start..<end])); start = buffer.index(after: end)
+            guard end - start <= Self.limit else { throw Failure.oversized }
+            records.append(Data(buffer[start..<end]))
+            start = buffer.index(after: end)
         }
         buffer.removeSubrange(buffer.startIndex..<start)
+        guard buffer.count <= Self.limit else { throw Failure.oversized }
+        return records
+    }
+
+    func finish() throws {
+        guard buffer.isEmpty else { throw Failure.incomplete }
     }
 }
 
@@ -172,6 +241,7 @@ nonisolated private final class WorkerRecords: @unchecked Sendable {
         }
         let validated = try await worker.request(["op":"measure","generation":current,
             "items":additions.filter(\.canReview).map { ["candidateID":String($0.node),"path":$0.path,"category":$0.category,"complete":$0.complete] as [String: Any] }])
+        guard current == generation, !Task.isCancelled else { throw error("Discovery was replaced") }
         let allowed = Set(validated.compactMap { ($0["body"] as? [String: Any])?["candidateID"] as? String })
         for index in additions.indices {
             additions[index].canReview = allowed.contains(String(additions[index].node))
@@ -253,6 +323,7 @@ nonisolated private final class WorkerRecords: @unchecked Sendable {
         var info = stat()
         guard fstat(descriptor,&info) == 0, info.st_uid == getuid(), info.st_mode & S_IFMT == S_IFREG,
               info.st_nlink == 1 else { throw error("Cleanup history is not an owned regular file") }
+        guard fchmod(descriptor, 0o600) == 0 else { throw error("Could not protect cleanup history permissions") }
         for record in records {
             var row = record; row["time"] = ISO8601DateFormatter().string(from:Date())
             var data = try JSONSerialization.data(withJSONObject:row); data.append(10)

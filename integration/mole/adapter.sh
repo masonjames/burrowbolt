@@ -118,7 +118,11 @@ esac
 # selected native targets too. An unprivileged partial lsof view is unknown.
 open_status=0
 _mole_container_cache_has_open_handle "$_BB_SELECTED_PATH" || open_status=$?
-[[ $open_status -eq 1 ]] || exit 35
+case "$open_status" in
+    1) ;; # Conclusively idle.
+    0) exit 35 ;; # Positive evidence of use.
+    *) exit 36 ;; # Unknown visibility, timeout or traversal failure.
+esac
 # Reuse upstream's common live-cache and database guards. This has no removal sink.
 # Replace only the output boundary; record_dry_run_cleanup_target still runs its checks.
 append_dry_run_cleanup_target() { return 0; }

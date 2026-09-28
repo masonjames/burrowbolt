@@ -44,10 +44,10 @@ nonisolated enum AgentLocator {
     /// what its PATH is, falls back to the usual install locations, then
     /// checks each one is signed in.
     static func find() async -> AgentEnvironment {
-        await Task.detached(priority: .userInitiated) { locate() }.value
+        await Task.detached(priority: .userInitiated) { await locate() }.value
     }
 
-    private static func locate() -> AgentEnvironment {
+    private static func locate() async -> AgentEnvironment {
         var env = AgentEnvironment(loaded: true)
         // QA: pretend neither agent is installed, to see the setup offer.
         if ProcessInfo.processInfo.environment["BZ_QA_NO_AGENTS"] != nil, !qaFaked {
@@ -82,11 +82,16 @@ nonisolated enum AgentLocator {
             return (kind, path)
         }
         // Both checks at once; each takes a fraction of a second.
-        var signedIn = [Bool](repeating: false, count: found.count)
-        let lock = NSLock()
-        DispatchQueue.concurrentPerform(iterations: found.count) { i in
-            let ok = isSignedIn(found[i].0, path: found[i].1, envPath: env.path)
-            lock.lock(); signedIn[i] = ok; lock.unlock()
+        let envPath = env.path
+        let signedIn = await withTaskGroup(of: (Int, Bool).self) { group in
+            for (index, agent) in found.enumerated() {
+                group.addTask {
+                    (index, isSignedIn(agent.0, path: agent.1, envPath: envPath))
+                }
+            }
+            var results = [Bool](repeating: false, count: found.count)
+            for await (index, signedIn) in group { results[index] = signedIn }
+            return results
         }
         env.agents = found.enumerated().map { i, pair in
             InstalledAgent(kind: pair.0, path: pair.1, signedIn: signedIn[i])
@@ -812,7 +817,7 @@ final class AgentRun {
         planSeconds = -startedAt.timeIntervalSinceNow
         items.sort { $0.bytes > $1.bytes }
         if summary.isEmpty {
-            summary = "About \(Fmt.size(items.filter { $0.blocked == nil }.reduce(0) { $0 + $1.bytes })) can go."
+            summary = "About \(Fmt.size(measuredUnion(items.filter { $0.blocked == nil }))) can go."
         }
         withAnimation(.snappy) { phase = .planned }
     }

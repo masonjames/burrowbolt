@@ -64,8 +64,9 @@ SPARKLE=$(python3 scripts/fetch-sparkle.py)
     --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" "$out"
 "$SPARKLE/bin/sign_update" --account burrowbolt --verify "$out/appcast.xml"
 mv "$stage/BurrowBolt-source.tar.gz" "$out/BurrowBolt-source.tar.gz"
+tar -czf "$out/BurrowBolt-symbols.tar.gz" -C build/symbols .
 python3 scripts/check-appcast.py "$out/appcast.xml" "$TAG"
-(cd "$out" && shasum -a 256 BurrowBolt.dmg BurrowBolt-source.tar.gz > SHA256SUMS.txt)
+(cd "$out" && shasum -a 256 BurrowBolt.dmg BurrowBolt-source.tar.gz BurrowBolt-symbols.tar.gz > SHA256SUMS.txt)
 gh release create "$TAG" "$out/BurrowBolt.dmg" "$out/BurrowBolt-source.tar.gz" "$out/SHA256SUMS.txt" \
-    "$out/appcast.xml" --repo "$REPO" --verify-tag --draft --title "BurrowBolt $V" --notes-file "$NOTES"
+    "$out/appcast.xml" "$out/BurrowBolt-symbols.tar.gz" --repo "$REPO" --verify-tag --draft --title "BurrowBolt $V" --notes-file "$NOTES"
 print "Draft ready. Validate installation and an older-to-newer update before publishing $TAG and its signed appcast."

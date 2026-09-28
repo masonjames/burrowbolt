@@ -12,7 +12,12 @@ UI_BENCH_INPUTS=(benchmarks/UIPerformance.swift)
 SPARKLE=$(python3 scripts/fetch-sparkle.py)
 UI_BENCH_LINK=(-F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker "$SPARKLE")
 UI_BENCH_HEADER=benchmarks/ui_fixture.h
-if [[ "${1:-}" == --insights ]]; then
+if [[ "${1:-}" == --worker ]]; then
+  shift
+  UI_BENCH_INPUTS=(benchmarks/WorkerCheck.swift)
+  clang -O2 -mmacosx-version-min=14.0 -c benchmarks/ui_fixture.c -o "$UI_BENCH_TMP/fixture.o"
+  UI_BENCH_INPUTS+=("$UI_BENCH_TMP/fixture.o")
+elif [[ "${1:-}" == --insights ]]; then
   shift
   UI_BENCH_INPUTS=(benchmarks/InsightsCheck.swift)
   UI_BENCH_LINK+=(-L target/release -lblitztree)

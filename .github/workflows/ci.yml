@@ -29,6 +29,7 @@ jobs:
         with:
           name: validation
           path: |
+            build/symbols/
             build/validation*
             build/mole-tests.txt
             build/performance*

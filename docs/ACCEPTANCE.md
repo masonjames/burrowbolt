@@ -41,3 +41,11 @@ The development `BurrowBolt.dmg` and its embedded app have Developer ID signatur
 Sparkle 2.10.0 generated and verified the local DMG signature and signed feed; altered DMG and feed copies were rejected by its official verifier. This is cryptographic verification, not an older-to-newer installation test. Corresponding source packaging was exercised, including vendored Rust dependencies and pinned Sparkle sources; offline Cargo metadata resolved the vendored dependencies.
 
 Local full validation passed on app-source commit `398481c8`. Hosted full checks, performance and Mole safeguards passed on `5fb67cce` (run `36361657783`). Other hosted runs flagged different timing cases: an 18% first-map increase did not repeat, while the expanded run improved first-map time and flagged scan/other renderer cases. The CI gate now retains three fixed rounds, each with 21 scan/first-map pairs, and blocks cases above 5% in at least two rounds. Isolated spikes remain visible for review; this does not waive smaller repeatable regressions or the broader release-performance checklist.
+
+## Second review
+
+The follow-up review fixed Data-volume alias mismatches in exclusion/root checks, bounded worker replies and preserved successful per-item receipts across process exit, rejected stale enrichment after a scan change, corrected overlapping fallback-plan totals, and removed concurrent mutation warnings from agent discovery. Active-file and unknown-process refusals now have different explanations; the underlying Mole guards remain intact. New regression checks cover both exclusion spellings, fragmented/oversized replies, invalid protocol versions, and exit immediately after a cleanup result.
+
+Builds now preserve separate app/worker crash symbols with UUID and source-line validation, embed their source commit, and explicitly disable Sparkle system profiling. No Sentry/PostHog client or remote log upload has been added. See `DIAGNOSTICS.md` for what is retained locally and the proposed opt-in error-reporting integration.
+
+These corrections do not close the outstanding signed/notarized release, complete cleanup-coverage, desktop, minimum-OS, or real-update acceptance checks above.
