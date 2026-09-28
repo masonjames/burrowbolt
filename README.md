@@ -2,7 +2,7 @@
 
 **BlitzTree’s speed, Mole’s digging.** A native disk explorer for Apple Silicon Macs running macOS 14 or later.
 
-BurrowBolt retains BlitzTree’s Rust bulk scanner and Swift/AppKit treemap, and bundles pinned Mole rules for disk insights and selected cleanup. It shows allocated bytes, keeps incomplete scans visible, and defaults removals to Trash. A Claude or Codex agent can automatically propose a plan after the first map; the app validates actions and requires approval before cleanup.
+BurrowBolt retains BlitzTree’s Rust bulk scanner and Swift/AppKit treemap, and bundles pinned Mole rules for disk insights and selected cleanup. It shows allocated bytes, keeps incomplete scans visible, and defaults removals to Trash. A Claude or Codex agent can automatically propose a plan after the first map; the app validates actions and requires approval before cleanup. Planning sends candidate paths and measured sizes to your selected agent provider. Built-in command/file tools and MCP integrations are disabled for this planning session; incompatible agent versions fail closed.
 
 This is the initial development implementation. A signed public installer is not yet released. See [acceptance status](docs/ACCEPTANCE.md) for the distinction between implemented behavior and release validation.
 

@@ -286,7 +286,9 @@ struct AgentPerformance {
             }
             if kind == .codex {
                 records.append(["id": 1, "result": [:]])
+                records.append(["id": 4, "result": ["config":["mcp_servers":["fixture":["enabled":true]]]]])
                 records.append(["id": 2, "result": ["thread": ["id": "offline-thread"]]])
+                records.append(["id":5,"result":["data":[["runtimeStatus":"disabled","tools":[:]]]]])
             }
             appendPlan()
             if restart { appendPlan() }
@@ -294,6 +296,10 @@ struct AgentPerformance {
             else { records.append(["type": "result", "structured_output": try! JSONSerialization.jsonObject(with: Data(plan.utf8)), "subtype": "success"]) }
             return Data((records.map(json).joined(separator: "\n") + "\n").utf8)
         }
+        let isolation = AgentCapture()
+        let isolated = AgentStreamReader(kind:.codex,prompt:"offline",folder:"/fixture",write:{ isolation.record("write:" + canonical($0)) },done:{ isolation.record("done") },emit:{ isolation.record(eventSignature($0)) })
+        isolated.feed(Data((json(["id":2,"result":["thread":["id":"fixture"]]])+"\n"+json(["id":5,"result":["data":[["runtimeStatus":"connected","tools":["unsafe":[:]]]]]])+"\n").utf8))
+        check(isolation.values.contains("done") && !isolation.values.contains(where:{ $0.contains("turn/start") }),"Codex started a model turn with external tools enabled")
         for kind in AgentKind.allCases {
             let bytes = Data("not-json\n\n".utf8) + stream(kind, plan: normal, restart: true)
             for width in [1, 7, 4096, 16384, bytes.count] {

@@ -58,6 +58,7 @@ nonisolated final class ReferenceAgentStreamReader: @unchecked Sendable {
     private var pending = Data()
     private var parser = ReferencePartialPlanParser()
     private var inPlan = false
+    private var planningThread: String?
 
     init(kind: AgentKind, prompt: String, folder: String, write: @escaping @Sendable (Data) -> Void,
          done: @escaping @Sendable () -> Void, emit: @escaping @Sendable (Event) -> Void) {
@@ -142,11 +143,27 @@ nonisolated final class ReferenceAgentStreamReader: @unchecked Sendable {
             switch id {
             case 1:
                 send(["method": "initialized"])
+                send(["id": 4, "method": "config/read", "params": ["cwd":folder,"includeLayers":false]])
+            case 4:
+                guard let config = result["config"] as? [String:Any] else {
+                    emit(.failed("Codex could not establish isolated planning settings")); done(); return
+                }
+                let servers = config["mcp_servers"] as? [String:Any] ?? [:]
+                let disabled = Dictionary(uniqueKeysWithValues: servers.keys.map { ($0,["enabled":false]) })
                 send(["id": 2, "method": "thread/start", "params": [
                     "cwd": folder, "sandbox": "read-only", "approvalPolicy": "never", "ephemeral": true,
+                    "config": ["mcp_servers":disabled],
                 ]])
             case 2:
                 guard let thread = (result["thread"] as? [String: Any])?["id"] as? String else { return }
+                planningThread = thread
+                send(["id":5,"method":"mcpServerStatus/list","params":["threadId":thread]])
+            case 5:
+                guard let thread = planningThread, let servers = result["data"] as? [[String:Any]],
+                      result["nextCursor"] == nil || result["nextCursor"] is NSNull,
+                      servers.allSatisfy({ $0["runtimeStatus"] as? String == "disabled" && ($0["tools"] as? [String:Any])?.isEmpty == true }) else {
+                    emit(.failed("Codex planning refused because external tools were not conclusively disabled")); done(); return
+                }
                 let schema = (try? JSONSerialization.jsonObject(with: Data(planSchema.utf8))) ?? [:]
                 send(["id": 3, "method": "turn/start", "params": [
                     "threadId": thread, "effort": "low", "outputSchema": schema,

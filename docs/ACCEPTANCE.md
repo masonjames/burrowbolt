@@ -6,6 +6,7 @@ Implementation is available in the draft BurrowBolt PR. It is **not release acce
 
 - Reviewed performance baseline: BlitzTree `699fd919d58cbb6b33055d5404890071c6b9c070`. The application history now also includes upstream v0.5.5 (`d68ff95f`), retaining BurrowBolt automatic planning. Mole remains the pristine `50790e8a` subtree.
 - Engine: 16 passed, one benchmark ignored. Worker protocol: 5 passed. CLI: 20 passed. Adapter: 8 passed, including exact selected paths, active targets, unknown process visibility, namespace separation, and tolerated upstream no-match statuses.
+- Installed Codex isolation: 26 configured MCP servers reported disabled and zero exposed tools before any model turn. An offline protocol check refuses connected/unknown tools. Claude is launched with no built-in or MCP tools. Live model-output acceptance remains separate.
 - Native insights: cache signatures, project pruning, installer/ZIP distinction, old Downloads, lossy path refusal, largest-files cap, and search cap pass.
 - UI/agent algorithm harnesses: outline/cleanup parity, prompt/parser parity, cancellation, retained failures and one-shot automatic planning pass. These are not desktop interaction tests.
 - Renderer: 28 pixel/geometry comparisons, 126 cushion checks, 2,000 fractional checks, 260,708 ring hits and 11,344 treemap hits passed. The baseline fixture's missing `Tree.drawn` contract is repaired.
@@ -22,7 +23,7 @@ Implementation is available in the draft BurrowBolt PR. It is **not release acce
 ## Required before public release
 
 - [ ] No repeatable scan, first-map or rendering regression across required paired workloads, including external storage; 5% triggers investigation rather than permission to regress.
-- [ ] Final app-and-worker memory, enrichment duration and interactive responsiveness reviewed against the bounded implementation.
+- [x] Bounded enrichment measured on 16,401,536 nodes: 171.65 seconds, 26,603 findings, 846 navigation requests, maximum main-loop gap 46.81 ms. Aggregate sampled RSS peaked at 2.391 GB across app/worker/probe descendants (shared pages may be counted multiple times; this is not unique memory). Five family probes were unavailable and 5,985 archive listings were deferred. This is an honest partial result, not complete family acceptance. Raw evidence: `build/enrichment-profile.txt` and `build/enrichment-memory.json`.
 - [ ] Representative family coverage and complete process evidence verified on supported desktop configurations; unsupported owner commands and container-stub actions remain informational.
 - [ ] GUI behavior verified, including selection, keyboard access, stale render discard, cleanup cancellation and update deferral. A fixture app rendered 13 nodes, but the desktop inspection tool hung before returning an accessibility tree or screenshot.
 - [ ] Fresh-machine installation, offline operation and Full Disk Access onboarding verified without developer tools.
