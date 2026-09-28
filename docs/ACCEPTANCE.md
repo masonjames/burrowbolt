@@ -49,3 +49,7 @@ The follow-up review fixed Data-volume alias mismatches in exclusion/root checks
 Builds now preserve separate app/worker crash symbols with UUID and source-line validation, embed their source commit, and explicitly disable Sparkle system profiling. No Sentry/PostHog client or remote log upload has been added. See `DIAGNOSTICS.md` for what is retained locally and the proposed opt-in error-reporting integration.
 
 These corrections do not close the outstanding signed/notarized release, complete cleanup-coverage, desktop, minimum-OS, or real-update acceptance checks above.
+
+The worker checks also exercise a process that stays alive between requests, plus cancellation/refusal/recovery against the real bundled Rust helper. This caught a buffering stall in the initial stream-drain implementation; the reader now uses one POSIX pipe read per available chunk.
+
+Hosted run `36373393366` flagged deep treemap hits at 0.042–0.044 ms versus 0.045–0.047 ms for only 1,000 points. The hot lookup source was unchanged. The harness now measures the same 50,000-point workload for both maps and retains six decimal places in milliseconds, instead of quantizing those tiny samples to whole microseconds. The 5%/three-round gate is unchanged. Three fixed local rendering rounds found no repeatable >5% cases; deep-hit ratios were 0.979, 0.991 and 0.993. Raw old hosted and new local measurements are retained under `build/review-ci-86a197f1` and `build/review-rendering-round*.txt`; hosted confirmation remains a separate gate.
