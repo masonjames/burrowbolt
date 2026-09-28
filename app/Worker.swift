@@ -74,8 +74,18 @@ import OSLog
                 DispatchQueue.main.async { [weak self] in self?.failAll(message, session: current) }
             }
             do {
-                while let data = try output.read(upToCount: 64 * 1024), !data.isEmpty {
-                    let records = try decoder.feed(data)
+                // FileHandle.read(upToCount:) can fill the requested length on
+                // pipes. A persistent worker needs one read(2) per available chunk.
+                let capacity = 64 * 1024
+                var bytes = [UInt8](repeating: 0, count: capacity)
+                while true {
+                    let count = Darwin.read(output.fileDescriptor, &bytes, capacity)
+                    if count < 0 {
+                        if errno == EINTR { continue }
+                        throw CocoaError(.fileReadUnknown)
+                    }
+                    if count == 0 { break }
+                    let records = try decoder.feed(Data(bytes.prefix(count)))
                     DispatchQueue.main.async { [weak self] in
                         guard let self, self.session == current else { return }
                         for record in records { self.receive(record) }

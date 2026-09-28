@@ -35,8 +35,8 @@ def main():
         plan=request('plan',generation='fixture',candidateIDs=['selected'])[0]
         if 'token' not in plan:
             assert selected.read_bytes()==b'isolated BurrowBolt fixture' and kept.read_bytes()==b'keep this fixture'
-            print('BLOCKED: native Trash execution; process guard refused: '+plan.get('message','unknown'))
-            print('PASS: uncertain process evidence preserves both fixture files')
+            print('BLOCKED: native Trash execution; guard refused: '+plan.get('message','unknown'))
+            print('PASS: refused cleanup preserves both fixture files')
             return
         result=request('apply',generation='fixture',token=plan['token'],candidateIDs=['selected'])[0]
         assert result['status']=='trashed', result
