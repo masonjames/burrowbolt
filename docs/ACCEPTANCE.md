@@ -16,7 +16,7 @@ Implementation is available in the draft BurrowBolt PR. It is **not release acce
 ## Performance evidence
 
 - Nine alternating `/Applications` scan pairs: 983,837 files / 130,319 directories, identical allocated bytes and error totals. Median baseline 1.51349 seconds; candidate 1.51103 seconds. Median peak footprint 69.19 / 68.78 MB. Raw local evidence: `build/perf-results/burrowbolt-applications.json`.
-- Five offscreen Retina first-map pairs: 1,114,157 nodes, identical bytes/scale. Medians 1.55447 / 1.56064 seconds; longest main-loop-gap medians 34.10 / 24.36 ms. This endpoint excludes visible-window paint. Evidence: `build/first-map/results.json`.
+- Five offscreen Retina first-map pairs: 1,114,157 nodes, identical bytes/scale. Medians 1.55447 / 1.56064 seconds; longest main-loop-gap medians 34.10 / 24.36 ms. This endpoint excludes visible-window paint. Evidence: `build/first-map-comparison.txt`.
 - Retina rendering: balanced 3.024 / 2.973 ms, wide 6.255 / 5.943 ms, deep 2.017 / 2.053 ms. Ring and hit-test cases remained comparable. These observations do not prove all-machine or all-storage acceptance.
 - An initial 16.4-million-node home profile exposed family-caller/deadline incompatibilities. Those were corrected and tested. A subsequent unlimited ZIP-listing run exceeded 390 seconds; automatic ZIP listing now has a shared 20-second budget and selected-file inspection remains available. Keep these failed runs as evidence, not passing measurements.
 
@@ -32,4 +32,12 @@ Implementation is available in the draft BurrowBolt PR. It is **not release acce
 - [ ] Real older-to-newer Sparkle update and tampered-update rejection verified.
 - [ ] Reviewed draft release published; unchanged signed appcast served over HTTPS.
 
-A Developer ID Application identity is available in Keychain. The BurrowBolt Sparkle key is also in Keychain; only its public key is tracked. The `burrowbolt-notary` notarization profile was not present at preflight. GitHub Pages has not been enabled or published. Development installers are explicitly unnotarized and disable in-app updates.
+A Developer ID Application identity is available in Keychain. The BurrowBolt Sparkle key is also in Keychain; only its public key is tracked. The `burrowbolt-notary` notarization profile was not present at preflight. GitHub Pages is configured for workflow deployment; no update feed has been published. Development installers are explicitly unnotarized and disable in-app updates.
+
+## Installer and hosted evidence
+
+The development `BurrowBolt.dmg` and its embedded app have Developer ID signatures, verified after a read-only mount. The bundle contains the worker, Mole resources, Sparkle, notices and the Applications shortcut, targets arm64/macOS 14, and disables update polling. It is **not notarized** and is not a public release.
+
+Sparkle 2.10.0 generated and verified the local DMG signature and signed feed; altered DMG and feed copies were rejected by its official verifier. This is cryptographic verification, not an older-to-newer installation test. Corresponding source packaging was exercised, including vendored Rust dependencies and pinned Sparkle sources; offline Cargo metadata resolved the vendored dependencies.
+
+Local full validation passed on app-source commit `398481c8`. Hosted full checks, performance and Mole safeguards passed on `5fb67cce` (run `36361657783`). Other hosted runs flagged different timing cases: an 18% first-map increase did not repeat, while the expanded run improved first-map time and flagged scan/other renderer cases. The CI gate now retains three fixed rounds, each with 21 scan/first-map pairs, and blocks cases above 5% in at least two rounds. Isolated spikes remain visible for review; this does not waive smaller repeatable regressions or the broader release-performance checklist.
